@@ -18,6 +18,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 const storeFile = () => path.join(app.getPath('userData'), 'island.json');
 const defaults = {
   settings: {
+    vpnApp: '', vpnConf: '', recAudio: true,
     city: 'Москва', lat: 55.7558, lon: 37.6173,
     hotkey: 'Alt+Space', mascot: true, dnd: false, autostart: false,
     aiUrl: 'http://localhost:11434/v1', aiKey: '', aiModel: 'llama3.2',
@@ -283,6 +284,13 @@ ipcMain.on('run', (_e, cmd) => {
   if (IS_WIN) spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', cmd], { detached: true, windowsHide: true });
   else toast({ icon: 'info', title: 'Только в Windows', text: cmd });
 });
+ipcMain.handle('pick-file', async (_e, kind) => {
+  const filters = kind === 'conf'
+    ? [{ name: 'Конфиг AmneziaWG / WireGuard', extensions: ['conf', 'vpn'] }]
+    : [{ name: 'Программы', extensions: ['exe', 'lnk', 'url', 'bat'] }, { name: 'Все файлы', extensions: ['*'] }];
+  const r = await dialog.showOpenDialog(win, { filters, properties: ['openFile'] });
+  return r.canceled ? null : r.filePaths[0];
+});
 ipcMain.handle('pick-app', async () => {
   const r = await dialog.showOpenDialog(win, {
     title: 'Выбери программу или ярлык', defaultPath: IS_WIN ? path.join(process.env.ProgramData || '', 'Microsoft\\Windows\\Start Menu\\Programs') : undefined,
@@ -458,6 +466,7 @@ app.whenReady().then(() => {
   remindersLoop();
   applySettings();
   setTimeout(() => { buildAppIndex(); buildFileIndex(); }, 1500);
+  require('./features')({ send, toast, store: () => store, saveStore, getWin: () => win, appIndex: () => appIndex });
   screen.on('display-metrics-changed', () => {
     const { workArea } = screen.getPrimaryDisplay();
     win.setBounds({ x: Math.round(workArea.x + (workArea.width - WIN_W) / 2), y: workArea.y, width: WIN_W, height: WIN_H });

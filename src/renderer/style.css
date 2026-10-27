@@ -315,3 +315,50 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 .v-launcher { display: flex; flex-direction: column; }
 .v-launcher .list { padding: 6px; }
 .v-launcher .row .rt kbd { font-size: 10px; }
+
+/* агенты на пилюле */
+.pill-agent { display: none; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #c4b5fd; white-space: nowrap; cursor: default; }
+.pill-agent.working, .pill-agent.ask { display: flex; }
+.pill-agent i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
+.pill-agent.ask { color: var(--accent); }
+.pill-agent.ask i { animation-duration: .6s; }
+@keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
+
+/* запись экрана */
+.pill-rec { display: none; align-items: center; gap: 10px; flex: 1; font-variant-numeric: tabular-nums; }
+.recording .pill-rec { display: flex; }
+.recording .pill-center, .recording .pill-right, .recording .pill-left { display: none; }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: pulse 1s ease-in-out infinite; }
+.rec-stop { display: flex; align-items: center; gap: 6px; background: rgba(255, 69, 58, .18); color: #ff6961; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 12px; }
+.rec-stop i { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
+.rec-stop:hover { background: rgba(255, 69, 58, .3); }
+#island.recording { cursor: default; }
+
+/* управление: bluetooth, плитки, переключатели */
+.control-grid { display: flex; flex-direction: column; gap: 8px; height: 100%; }
+.bt-card { flex: 1; min-height: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.bt-head { display: flex; align-items: center; gap: 4px; }
+.bt-head .ibtn { width: 26px; height: 26px; }
+.bt-head .switch { margin-left: 6px; }
+.bt-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.bt-list .empty { padding: 10px; font-size: 12px; }
+.bt-dev { display: flex; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 10px; }
+.bt-dev:hover { background: var(--card2); }
+.bt-ic { width: 28px; height: 28px; border-radius: 50%; background: var(--card2); display: grid; place-items: center; color: var(--dim); flex: none; }
+.bt-dev.on .bt-ic { background: #3b82f6; color: #fff; }
+.bt-dev .rb { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bt-dev .rb b { font-weight: 500; font-size: 12.5px; }
+.bt-dev .rb span { font-size: 11px; color: var(--dim); }
+.chip.accent { background: rgba(124, 92, 255, .25); color: #c4b5fd; }
+.ctiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; flex: none; }
+.ctile { padding: 10px; gap: 6px; }
+.ctoggles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex: none; }
+.ctoggles .toggle-row { grid-column: auto; padding: 10px 12px; gap: 8px; min-width: 0; }
+.ctoggles .tb { min-width: 0; }
+.ctoggles .tb b { display: flex; align-items: center; gap: 5px; }
+.toggle-row.vpn-on b { color: var(--ok); }
+.switch:disabled { opacity: .5; }
+.field .sub { font-size: 11px; color: var(--dim2); margin-top: 2px; }
+.field .pick { display: flex; gap: 6px; align-items: center; }
+.field .pick input { flex: 1; min-width: 0; }
+.actions .tile { height: 44px; }

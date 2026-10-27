@@ -65,7 +65,15 @@ const ICONS = {
   checklist: '<path d="m4 7 2 2 3-3M4 16l2 2 3-3M12 8h8M12 17h8"/>',
   strike: '<path d="M4 12h16M16 6.5A4 3 0 0 0 12 5c-2.5 0-4 1.3-4 3s1.5 2.5 4 3M8 17.5A4 3 0 0 0 12 19c2.5 0 4-1.3 4-3"/>',
   highlight: '<path d="m9 11-5 5v4h4l5-5M14 6l4 4M12 8l5-5 4 4-5 5z"/>',
-  cat: '',
+  agent: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M12 15h5"/>',
+  shield: '<path d="M12 3 4.5 6v6c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9V6z"/><path d="m9 12 2 2 4-4"/>',
+  bluetooth: '<path d="m7 7 10 10-5 4V3l5 4L7 17"/>',
+  headphones: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="6.5" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="6.5" rx="1.5"/>',
+  mouse: '<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>',
+  keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
+  speaker: '<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><circle cx="12" cy="14.5" r="3.5"/><path d="M12 7h.01"/>',
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+  gamepad: '<path d="M6.5 8h11a4 4 0 0 1 4 4.5l-.6 4a2.5 2.5 0 0 1-4.4 1.2L15 16H9l-1.5 1.7a2.5 2.5 0 0 1-4.4-1.2l-.6-4A4 4 0 0 1 6.5 8z"/><path d="M8 11v3M6.5 12.5h3M15.5 12h.01M17.5 13.5h.01"/>',
 };
 function icon(name, size = 18, extra = '') {
   return `<svg class="ic ${extra}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;

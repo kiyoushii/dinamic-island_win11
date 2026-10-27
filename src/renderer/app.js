@@ -23,6 +23,8 @@ function pillWidth() {
   if (media) w += 64;
   if (store?.settings.mascot) w += 30;
   if (timer.running) w += 56;
+  if (agents.length) w += 84;
+  if (el.classList.contains('recording')) w = Math.max(w, 330);
   return w;
 }
 function sizeFor(s) {
@@ -37,7 +39,7 @@ function sizeFor(s) {
 }
 function setState(s) {
   state = s;
-  el.className = `s-${s}`;
+  el.className = `s-${s}` + (recorder.mr ? ' recording' : '');
   el.classList.toggle('has-media', !!media);
   el.classList.toggle('playing', !!media?.playing);
   el.classList.toggle('mascot-on', !!store?.settings.mascot);
@@ -72,7 +74,7 @@ let hoverTimer, leaveTimer;
 el.addEventListener('mouseenter', () => {
   over = true; island.mouse(true);
   clearTimeout(leaveTimer);
-  if (state === 'pill') hoverTimer = setTimeout(() => openPanel(), 140);
+  if (state === 'pill' && !recorder.mr) hoverTimer = setTimeout(() => openPanel(), 140);
   if (state === 'toast') hoverTimer = setTimeout(() => { clearTimeout(toastTimer); currentToast = null; openPanel(); }, 700);
   if (state === 'player') clearTimeout(playerTimer);
 });
@@ -363,7 +365,7 @@ function renderWeather() {
 // ================= уведомления =================
 const toastQ = [];
 let toastTimer, toastWide = false, currentToast = null;
-const TOAST_IC = { clip: 'clip', download: 'download', shot: 'shot', color: 'color', qr: 'qr', bell: 'bell', timer: 'timer', info: 'info', umbrella: 'umbrella', sparkle: 'sparkle', eraser: 'eraser', location: 'location' };
+const TOAST_IC = { clip: 'clip', download: 'download', shot: 'shot', color: 'color', qr: 'qr', bell: 'bell', timer: 'timer', info: 'info', umbrella: 'umbrella', sparkle: 'sparkle', eraser: 'eraser', location: 'location', agent: 'agent', check: 'check', record: 'record', shield: 'shield' };
 function showToast(n) {
   if (store.settings.dnd && !n.force) return;
   if (state === 'panel' || state === 'launcher') {
@@ -441,7 +443,7 @@ $('#tabs').addEventListener('click', (e) => {
 });
 function showPage(id) {
   $$('.page').forEach((p) => p.classList.toggle('active', p.dataset.page === id));
-  ({ clip: renderClips, shelf: renderShelf, text: openText, chat: renderChat, notes: renderNotes, control: renderControl, settings: renderSettings, weather: renderWeather, home: renderDock })[id]?.();
+  ({ clip: renderClips, shelf: renderShelf, text: openText, chat: renderChat, notes: renderNotes, control: () => { renderControl(); loadBt(); island.vpnStatus().then((v) => { vpn = { ...vpn, ...v }; renderControl(); }); }, settings: renderSettings, weather: renderWeather, home: renderDock })[id]?.();
   if (id === 'clip') setTimeout(() => $('#clip-q').focus(), 50);
 }
 
@@ -452,6 +454,8 @@ const ACTIONS = [
   ['qr', 'QR-код', () => island.capture('qr')],
   ['color', 'Пипетка', () => island.capture('color')],
   ['eraser', 'Чистый текст', cleanClipboard],
+  ['record', 'Запись экрана', () => setTimeout(startRecording, 350)],
+  ['shield', 'VPN', () => toggleVpn(!vpn.on)],
   ['command', 'Команда', () => openLauncher()],
 ];
 $('#actions').innerHTML = ACTIONS.map(([ic, name], i) => `<button class="tile" data-a="${i}">${icon(ic, 20)}<span>${name}</span></button>`).join('');
@@ -763,20 +767,62 @@ $('#rem-q').addEventListener('keydown', (e) => {
 });
 
 // ================= управление =================
+let vpn = { on: false, via: '', busy: false };
+let bt = { radio: null, devices: [], loading: false };
+island.on('vpn', (v) => { vpn = { ...vpn, ...v }; if (tab === 'control' && state === 'panel') renderControl(); });
+function btIcon(name) {
+  const n = name.toLowerCase();
+  if (/bud|pod|head|наушн|ear|wh-|wf-|jbl tune|freebuds|airdots/.test(n)) return 'headphones';
+  if (/mouse|мыш|mx /.test(n)) return 'mouse';
+  if (/key|клав/.test(n)) return 'keyboard';
+  if (/speaker|колонк|boom|flip|charge|станци|alice|алис/.test(n)) return 'speaker';
+  if (/phone|iphone|galaxy|redmi|pixel|телефон/.test(n)) return 'phone';
+  if (/pad|controller|геймпад|xbox|dualsense/.test(n)) return 'gamepad';
+  return 'bluetooth';
+}
+async function loadBt() {
+  bt.loading = true; renderControl();
+  bt = { ...(await island.btList()), loading: false };
+  if (tab === 'control' && state === 'panel') renderControl();
+}
 async function renderControl() {
   const theme = await island.getTheme();
   const s = store.settings;
   const tiles = [['lock', 'lock', 'Блокировка'], ['sleep', 'moon', 'Сон'], ['restart', 'restart', 'Перезагрузка'], ['shutdown', 'power', 'Выключение']];
+  const btOn = bt.radio !== 'Off';
+  const devs = bt.devices.slice().sort((a, b) => b.connected - a.connected);
+  const btList = bt.loading && !devs.length ? '<div class="empty">Ищу устройства…</div>'
+    : !btOn ? '<div class="empty">Bluetooth выключен</div>'
+      : devs.length ? devs.map((d) => `<div class="bt-dev ${d.connected ? 'on' : ''}">
+          <div class="bt-ic">${icon(btIcon(d.name), 16)}</div>
+          <div class="rb"><b>${esc(d.name)}</b><span>${d.connected ? 'Подключено' : 'Не подключено'}${d.battery != null ? ` · ${d.battery}%` : ''}</span></div>
+          <button class="chip ${d.connected ? '' : 'accent'}" data-bt-open>${d.connected ? 'Отключить' : 'Подключить'}</button></div>`).join('')
+        : '<div class="empty">Нет сопряжённых устройств</div>';
   const toggles = [
-    ['theme', theme === 'dark', 'Тёмная тема Windows', 'Переключает тему приложений и системы'],
-    ['dnd', s.dnd, 'Не беспокоить', 'Остров молчит, кроме таймеров и напоминаний'],
-    ['mascot', s.mascot, 'Котик на острове', 'Следит за курсором и задумывается, пока ИИ пишет'],
-    ['lyrics', s.lyrics, 'Слова песен', 'Синхронный текст из LRCLIB в мини-плеере'],
+    ['vpn', vpn.on, 'VPN', vpn.busy ? 'Переключаю…' : vpn.on ? `Включён · ${vpn.via}` : (s.vpnConf ? 'Туннель AmneziaWG' : vpn.app ? vpn.app.split(/[\\/]/).pop().replace(/\.(lnk|exe)$/i, '') : 'Happ / Amnezia — укажи в настройках')],
+    ['theme', theme === 'dark', 'Тёмная тема', 'Windows и приложения'],
+    ['dnd', s.dnd, 'Не беспокоить', 'Только таймеры и агенты'],
   ];
-  $('#control').innerHTML = tiles.map(([id, ic, name]) => `<button class="ctile" data-sys="${id}">${icon(ic, 22)}<span>${name}</span></button>`).join('')
-    + toggles.map(([id, on, name, sub]) => `<div class="toggle-row"><div class="tb"><b>${name}</b><span>${sub}</span></div><button class="switch ${on ? 'on' : ''}" data-tg="${id}"></button></div>`).join('');
+  $('#control').innerHTML = `
+    <div class="card bt-card">
+      <div class="bt-head"><span class="label">${icon('bluetooth', 13)}Устройства Bluetooth</span><span class="spacer"></span>
+        <button class="ibtn" data-bt-refresh title="Обновить">${icon('refresh', 14)}</button>
+        <button class="ibtn" data-bt-open title="Параметры Bluetooth">${icon('gear', 14)}</button>
+        <button class="switch ${btOn ? 'on' : ''}" data-bt-radio></button></div>
+      <div class="bt-list">${btList}</div>
+    </div>
+    <div class="ctiles">${tiles.map(([id, ic, name]) => `<button class="ctile" data-sys="${id}">${icon(ic, 20)}<span>${name}</span></button>`).join('')}</div>
+    <div class="ctoggles">${toggles.map(([id, on, name, sub]) => `<div class="toggle-row ${id === 'vpn' && on ? 'vpn-on' : ''}"><div class="tb"><b>${id === 'vpn' ? icon('shield', 14) : ''}${name}</b><span class="ellipsis">${esc(sub)}</span></div><button class="switch ${on ? 'on' : ''}" data-tg="${id}" ${id === 'vpn' && vpn.busy ? 'disabled' : ''}></button></div>`).join('')}</div>`;
 }
 $('#control').addEventListener('click', async (e) => {
+  if (e.target.closest('[data-bt-open]')) { island.open('ms-settings:bluetooth'); return; }
+  if (e.target.closest('[data-bt-refresh]')) return loadBt();
+  if (e.target.closest('[data-bt-radio]')) {
+    const on = bt.radio === 'Off';
+    bt.radio = on ? 'On' : 'Off'; renderControl();
+    await island.btRadio(on);
+    return setTimeout(loadBt, 1500);
+  }
   const t = e.target.closest('[data-sys]');
   if (t) {
     const what = t.dataset.sys;
@@ -785,27 +831,102 @@ $('#control').addEventListener('click', async (e) => {
     setTimeout(() => renderControl(), 3000);
     return;
   }
-  const g = e.target.closest('[data-tg]'); if (!g) return;
+  const g = e.target.closest('[data-tg]'); if (!g || g.disabled) return;
   const on = !g.classList.contains('on');
   g.classList.toggle('on', on);
   if (g.dataset.tg === 'theme') await island.setTheme(on ? 'dark' : 'light');
+  else if (g.dataset.tg === 'vpn') toggleVpn(on);
   else saveSetting(g.dataset.tg, on);
 });
+async function toggleVpn(on) {
+  vpn.busy = true; renderControl();
+  const r = await island.vpnSet(on);
+  vpn = { ...vpn, ...r, busy: false };
+  if (!r.ok) showToast({ icon: 'shield', title: 'VPN не переключился', text: r.error, force: true });
+  else showToast({ icon: 'shield', title: r.on ? 'VPN включён' : 'VPN выключен', text: r.on ? r.via : 'Интернет напрямую', force: true });
+  if (tab === 'control' && state === 'panel') renderControl();
+}
+
+// ================= агенты =================
+let agents = [];
+island.on('agents', (list) => {
+  const wasBusy = agents.some((a) => a.state === 'working');
+  agents = list;
+  const busy = agents.some((a) => a.state === 'working');
+  if (busy !== wasBusy && !chat.busy) mascot(busy ? 'think' : '');
+  if (currentToast?.icon === 'agent' && !agents.some((a) => a.state === 'ask')) { clearTimeout(toastTimer); endToast(); }
+  renderAgents();
+});
+function renderAgents() {
+  const a = agents.find((x) => x.state === 'ask') || agents[0];
+  const elA = $('#pill-agent');
+  if (!a) { elA.innerHTML = ''; elA.className = 'pill-agent'; refresh(); return; }
+  elA.className = `pill-agent ${a.state}`;
+  elA.title = `${a.name}${a.project ? ' · ' + a.project : ''}\n${a.text || ''}`;
+  elA.innerHTML = `<i></i>${a.state === 'ask' ? 'ждёт' : 'работает'}${agents.length > 1 ? ` ×${agents.length}` : ''}`;
+  refresh();
+}
+
+// ================= запись экрана =================
+const recorder = { mr: null, t0: 0, timer: null, ext: '' };
+async function startRecording() {
+  if (recorder.mr) return;
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60, max: 60 } }, audio: !!store.settings.recAudio && navigator.userAgent.includes('Windows') });
+    const hasAudio = stream.getAudioTracks().length > 0;
+    const mime = (hasAudio
+      ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/webm;codecs=vp9,opus', 'video/webm']
+      : ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']).find((m) => MediaRecorder.isTypeSupported(m));
+    const mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 16e6 });
+    recorder.ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    await island.recStart(recorder.ext);
+    let chain = Promise.resolve();
+    mr.ondataavailable = (e) => { if (e.data.size) chain = chain.then(async () => island.recChunk(await e.data.arrayBuffer())); };
+    mr.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      chain.then(() => island.recStop());
+      clearInterval(recorder.timer); recorder.mr = null;
+      el.classList.remove('recording'); refresh();
+    };
+    stream.getVideoTracks()[0].onended = () => mr.state !== 'inactive' && mr.stop();
+    mr.start(1000);
+    recorder.mr = mr; recorder.t0 = Date.now();
+    $('#rec-fmt').textContent = recorder.ext.toUpperCase();
+    recorder.timer = setInterval(() => { $('#rec-time').textContent = fmtTime((Date.now() - recorder.t0) / 1000); }, 500);
+    $('#rec-time').textContent = '0:00';
+    el.classList.add('recording'); refresh();
+  } catch (err) {
+    showToast({ icon: 'record', title: 'Запись не началась', text: err.message, force: true });
+  }
+}
+function stopRecording() { if (recorder.mr && recorder.mr.state !== 'inactive') recorder.mr.stop(); }
+$('#rec-stop').addEventListener('click', (e) => { e.stopPropagation(); stopRecording(); });
 
 // ================= настройки =================
-function renderSettings() {
+async function renderSettings() {
   const s = store.settings;
+  const ag = await island.agentsStatus();
   const f = (key, label, ph = '', type = 'text', wide = false) => `<div class="field ${wide ? 'wide' : ''}"><label>${label}</label><input data-set="${key}" type="${type}" value="${esc(s[key])}" placeholder="${esc(ph)}"></div>`;
+  const sw = (key, label) => `<div class="field row2"><div><label>${label}</label></div><button class="switch ${s[key] ? 'on' : ''}" data-tgs="${key}"></button></div>`;
+  const pick = (key, label, ph, kind) => `<div class="field"><label>${label}</label><div class="pick"><input data-set="${key}" value="${esc(s[key])}" placeholder="${esc(ph)}"><button class="chip" data-pick="${key}" data-kind="${kind}">Выбрать</button></div></div>`;
   $('#settings').innerHTML = `
     ${f('city', 'Город для погоды (Enter — найти)', 'Москва')}
     ${f('hotkey', 'Горячая клавиша поиска', 'Alt+Space')}
-    <div class="field row2"><div><label>Запускать вместе с Windows</label></div><button class="switch ${s.autostart ? 'on' : ''}" data-tgs="autostart"></button></div>
-    <div class="field row2"><div><label>Котик на острове</label></div><button class="switch ${s.mascot ? 'on' : ''}" data-tgs="mascot"></button></div>
+    ${sw('autostart', 'Запускать вместе с Windows')}
+    ${sw('mascot', 'Котик на острове')}
+    ${sw('lyrics', 'Слова песен в мини-плеере')}
+    ${sw('recAudio', 'Записывать звук системы в видео')}
+    <div class="field wide row2"><div><label>Агенты в терминале · Claude Code</label><div class="sub">${ag.installed ? '✓ Подключено — остров покажет, когда агент работает, ждёт ответа и закончил' : 'Остров добавит хуки в ~/.claude/settings.json (копия сохранится рядом)'}</div></div>
+      <button class="chip ${ag.installed ? '' : 'accent'}" data-agents="${ag.installed ? 'remove' : 'install'}">${ag.installed ? 'Отключить' : 'Подключить'}</button></div>
+    ${pick('vpnApp', 'VPN: программа (Happ / AmneziaVPN)', 'найдётся сама', 'app')}
+    ${pick('vpnConf', 'VPN: конфиг AmneziaWG (необязательно)', 'файл .conf', 'conf')}
     ${f('aiUrl', 'ИИ: адрес (OpenAI-совместимый)', 'http://localhost:11434/v1', 'text', true)}
     ${f('aiModel', 'ИИ: модель', 'llama3.2')}
     ${f('aiKey', 'ИИ: ключ (если нужен)', 'не нужен для Ollama', 'password')}
-    <div class="note2">Бесплатные варианты ИИ: <b>Ollama</b> — работает на твоём компе без интернета (ollama.com → <code>ollama pull llama3.2</code>), или бесплатный ключ <b>Groq</b> (адрес https://api.groq.com/openai/v1, модель llama-3.3-70b-versatile) / <b>OpenRouter</b> (https://openrouter.ai/api/v1, модели с пометкой :free).<br>
-    Скриншоты сохраняются в «Изображения/Island». Данные острова хранятся только на этом компьютере.</div>`;
+    <div class="note2"><b>VPN.</b> С программой Happ / AmneziaVPN остров запускает и закрывает её. Включи в ней «подключаться при запуске», тогда переключатель включает VPN сразу. С конфигом AmneziaWG остров поднимает туннель сам, без приложения, а Windows один раз спросит права администратора.<br>
+    <b>Другие агенты</b> (Codex, Aider, свои скрипты) могут писать на <code>http://127.0.0.1:${ag.port}/agent/имя</code> JSON вида <code>{"event":"start|ask|done","text":"…"}</code>.<br>
+    <b>ИИ бесплатно:</b> Ollama на этом компе (<code>ollama pull llama3.2</code>), ключ Groq (https://api.groq.com/openai/v1, llama-3.3-70b-versatile) или OpenRouter (модели :free).<br>
+    Скриншоты лежат в «Изображения/Island», записи экрана — в «Видео/Island».</div>`;
 }
 $('#settings').addEventListener('change', (e) => {
   const i = e.target.closest('[data-set]'); if (!i || i.dataset.set === 'city') return;
@@ -820,9 +941,21 @@ $('#settings').addEventListener('keydown', async (e) => {
   save('settings'); i.value = g.name; loadWeather();
   showToast({ icon: 'location', title: 'Погода: ' + g.name, text: [g.admin1, g.country].filter(Boolean).join(', '), force: true });
 });
-$('#settings').addEventListener('click', (e) => {
-  const g = e.target.closest('[data-tgs]'); if (!g) return;
-  const on = !g.classList.contains('on'); g.classList.toggle('on', on); saveSetting(g.dataset.tgs, on);
+$('#settings').addEventListener('click', async (e) => {
+  const g = e.target.closest('[data-tgs]');
+  if (g) { const on = !g.classList.contains('on'); g.classList.toggle('on', on); saveSetting(g.dataset.tgs, on); }
+  const p = e.target.closest('[data-pick]');
+  if (p) {
+    const file = await island.pickFile(p.dataset.kind);
+    if (file) { saveSetting(p.dataset.pick, file); renderSettings(); }
+  }
+  const a = e.target.closest('[data-agents]');
+  if (a) {
+    const r = await island.agentsInstall(a.dataset.agents === 'remove');
+    if (!r.ok) showToast({ icon: 'agent', title: 'Не получилось', text: r.error, force: true });
+    else showToast({ icon: 'agent', title: a.dataset.agents === 'remove' ? 'Агенты отключены' : 'Claude Code подключён', text: a.dataset.agents === 'remove' ? 'Хуки убраны из настроек' : 'Перезапусти Claude Code — дальше остров всё покажет', force: true });
+    renderSettings();
+  }
 });
 
 function save(key) { island.setStore(key, store[key]); }
@@ -840,6 +973,9 @@ const lq = $('#lq');
 const L_ACTIONS = [
   { icon: 'region', title: 'Скриншот области', keys: 'скриншот область скрин screenshot', run: () => island.capture('region') },
   { icon: 'screen', title: 'Скриншот экрана', keys: 'скриншот экран весь скрин screenshot', run: () => island.capture('full') },
+  { icon: 'record', title: 'Запись экрана', keys: 'запись экрана видео record', run: () => startRecording() },
+  { icon: 'shield', title: 'Включить / выключить VPN', keys: 'vpn впн happ amnezia', run: () => toggleVpn(!vpn.on) },
+  { icon: 'bluetooth', title: 'Bluetooth-устройства', keys: 'bluetooth блютуз наушники', run: () => openPanel('control'), stay: true },
   { icon: 'color', title: 'Пипетка', keys: 'пипетка цвет color picker', run: () => island.capture('color') },
   { icon: 'qr', title: 'QR-код с экрана', keys: 'qr код кьюар', run: () => island.capture('qr') },
   { icon: 'note', title: 'Заметки и таймер', keys: 'заметки заметка таймер notes', run: () => openPanel('notes'), stay: true },
@@ -869,7 +1005,7 @@ async function updateLauncher() {
   const seq = ++launcher.seq;
   const items = [];
   if (!q) {
-    items.push(...L_ACTIONS.slice(0, 4));
+    items.push(...L_ACTIONS.filter((a) => ['Скриншот области', 'Скриншот экрана', 'Запись экрана', 'QR-код с экрана'].includes(a.title)));
   } else {
     if (q.startsWith('>')) {
       const cmd = q.slice(1).trim();

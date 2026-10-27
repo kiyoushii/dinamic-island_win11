@@ -5,9 +5,8 @@
 ## Как запустить
 
 ### Вариант 1: готовый .exe (проще всего)
-1. Открой вкладку **Actions** этого репозитория на GitHub → последний запуск **Build Windows**.
-2. Внизу в разделе **Artifacts** скачай `Island-windows`.
-3. Внутри два файла: `Island-portable-*.exe` (запускается без установки) и `Island Setup *.exe` (установщик).
+1. Открой **[Releases](https://github.com/kiyoushii/dinamic-island_win11/releases/latest)** (справа на главной странице репозитория).
+2. Скачай `Island-portable-*.exe` (запускается без установки) или `Island-Setup-*.exe` (установщик).
 
 > Windows SmartScreen может предупредить «неизвестный издатель», потому что exe не подписан. Нажми «Подробнее → Выполнить в любом случае».
 

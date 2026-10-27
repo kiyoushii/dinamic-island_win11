@@ -1,7 +1,7 @@
 {
   "name": "island",
   "productName": "Island",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Dynamic Island для Windows",
   "main": "src/main.js",
   "author": "kiyoushii",
@@ -34,7 +34,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Island-Setup-${version}.exe"
     },
     "portable": {
       "artifactName": "Island-portable-${version}.exe"

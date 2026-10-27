@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: file:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https:">
+  <title>Island</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="island" class="s-pill">
+    <svg id="wave" preserveAspectRatio="none"><path id="wave-fill"/><path id="wave-line"/></svg>
+
+    <!-- свёрнутая пилюля -->
+    <div class="view v-pill">
+      <div class="pill-left"><div id="pill-art" class="art-sm"></div><div id="mascot" class="mascot"></div></div>
+      <div class="pill-center"><span id="pill-time">--:--</span><span id="pill-weather" class="pill-weather"></span></div>
+      <div class="pill-right"><span id="pill-timer" class="pill-timer"></span><div id="pill-eq" class="eq"><i></i><i></i><i></i><i></i></div></div>
+    </div>
+
+    <!-- уведомление / загрузка -->
+    <div class="view v-toast"><div id="toast"></div></div>
+
+    <!-- мини-плеер со словами -->
+    <div class="view v-player">
+      <div class="mp-main">
+        <div class="mp-top">
+          <div id="mp-art" class="art-md"></div>
+          <div class="mp-meta"><b id="mp-title"></b><span id="mp-artist"></span><span id="mp-album" class="dim"></span></div>
+          <div class="mp-side"><div class="eq eq-sm" id="mp-eq"><i></i><i></i><i></i><i></i></div><b id="mp-time"></b><span id="mp-weather"></span></div>
+        </div>
+        <div class="progress-row"><span id="mp-pos"></span><div class="progress" id="mp-progress"><div></div></div><span id="mp-left"></span></div>
+        <div class="mp-controls">
+          <button class="ibtn" data-act="lyrics-toggle" title="Слова">LYR</button>
+          <button class="ibtn" data-media="prev">PREV</button>
+          <button class="playbtn" data-media="toggle" id="mp-play"></button>
+          <button class="ibtn" data-media="next">NEXT</button>
+          <span class="spacer"></span>
+        </div>
+      </div>
+      <div class="mp-lyrics" id="mp-lyrics"></div>
+    </div>
+
+    <!-- развёрнутая панель -->
+    <div class="view v-panel">
+      <div class="tabs" id="tabs"></div>
+      <div class="pages">
+        <section class="page" data-page="home">
+          <div class="home-grid">
+            <div class="home-left">
+              <div class="card player-card">
+                <div id="pc-art" class="art-lg"></div>
+                <div class="pc-body">
+                  <span class="label" id="pc-app">МУЗЫКА</span>
+                  <b id="pc-title" class="ellipsis">Ничего не играет</b>
+                  <span id="pc-artist" class="dim ellipsis">Включи музыку в любом плеере</span>
+                  <div class="progress" id="pc-progress"><div></div></div>
+                  <div class="times"><span id="pc-pos">0:00</span><span id="pc-left">-0:00</span></div>
+                  <div class="pc-controls">
+                    <button class="ibtn" data-media="prev">PREV</button>
+                    <button class="playbtn" data-media="toggle" id="pc-play"></button>
+                    <button class="ibtn" data-media="next">NEXT</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card volume-card">
+                <button class="ibtn" id="vol-btn"></button>
+                <input type="range" id="vol" min="0" max="100" value="50">
+                <span class="dim" id="vol-val">50</span>
+                <button class="chip" data-act="lyrics-toggle">Слова песни</button>
+              </div>
+            </div>
+            <div class="actions" id="actions"></div>
+          </div>
+          <div class="dock" id="dock"></div>
+        </section>
+
+        <section class="page" data-page="clip">
+          <div class="search-row"><span class="si"></span><input id="clip-q" placeholder="Поиск по буферу…"><button class="ibtn" id="clip-clear" title="Очистить (кроме закреплённых)"></button></div>
+          <div class="list" id="clip-list"></div>
+          <div class="foot dim"><span>Клик — вставить туда, где ты печатал · копировать — значок справа</span><span id="clip-count"></span></div>
+        </section>
+
+        <section class="page" data-page="shelf">
+          <div class="shelf" id="shelf"></div>
+          <div class="foot dim"><span>Перетащи файл на остров — он подождёт на полке. Тяни обратно — и брось куда нужно.</span><span id="shelf-count"></span></div>
+        </section>
+
+        <section class="page" data-page="text">
+          <div class="text-grid">
+            <div class="text-left">
+              <textarea id="tt-input" spellcheck="false" placeholder="Вставь текст или он подтянется из буфера…"></textarea>
+              <div class="tt-status" id="tt-status"></div>
+              <div class="foot dim"><span id="tt-stats"></span><span><button class="ibtn" id="tt-copy" title="Копировать"></button><button class="ibtn" id="tt-clear" title="Очистить"></button></span></div>
+            </div>
+            <div class="text-right"><div class="label">Инструменты</div><div class="tt-tools" id="tt-tools"></div></div>
+          </div>
+        </section>
+
+        <section class="page" data-page="chat">
+          <div class="chat-log" id="chat-log"></div>
+          <div class="chat-input">
+            <button class="ibtn" id="chat-attach" title="Приложить файл"></button>
+            <div class="chat-file" id="chat-file"></div>
+            <input id="chat-q" placeholder="Сообщение для ИИ…">
+            <button class="sendbtn" id="chat-send"></button>
+          </div>
+          <input type="file" id="chat-file-input" hidden>
+        </section>
+
+        <section class="page" data-page="notes">
+          <div class="notes-grid">
+            <div class="notes-left">
+              <div class="folders" id="folders"></div>
+              <div id="note" class="note" contenteditable="true" spellcheck="false"></div>
+              <div class="note-tools" id="note-tools"></div>
+            </div>
+            <div class="notes-right">
+              <div class="card timer-card">
+                <div class="ring" id="ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" class="ring-bg"/><circle cx="50" cy="50" r="44" class="ring-fg" id="ring-fg"/></svg><b id="ring-time">5:00</b></div>
+                <div class="timer-btns"><button class="btn-accent" id="timer-start">Старт</button><button class="chip" id="timer-reset">Сброс</button></div>
+                <div class="presets" id="presets"></div>
+              </div>
+              <div class="card rem-card">
+                <div class="label"><span class="lic"></span>Напоминания</div>
+                <div class="rem-list" id="rem-list"></div>
+                <input id="rem-q" placeholder="позвонить маме завтра в 9">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" data-page="weather">
+          <div class="weather-grid" id="weather"></div>
+        </section>
+
+        <section class="page" data-page="control">
+          <div class="control-grid" id="control"></div>
+        </section>
+
+        <section class="page" data-page="settings">
+          <div class="settings" id="settings"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- строка поиска Alt+Space -->
+    <div class="view v-launcher">
+      <div class="search-row big"><span class="si"></span><input id="lq" placeholder="Программы, 12*34, 5 км в милях, > ipconfig…" spellcheck="false"><kbd id="lkbd">Alt+Space</kbd></div>
+      <div class="list" id="lres"></div>
+    </div>
+  </div>
+
+  <script src="icons.js"></script>
+  <script src="tools.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

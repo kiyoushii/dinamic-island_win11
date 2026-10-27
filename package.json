@@ -1,0 +1,46 @@
+{
+  "name": "island",
+  "productName": "Island",
+  "version": "0.1.0",
+  "description": "Dynamic Island для Windows",
+  "main": "src/main.js",
+  "author": "kiyoushii",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable nsis"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "pro.island.app",
+    "productName": "Island",
+    "files": [
+      "src/**/*",
+      "node_modules/jsqr/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "Island-portable-${version}.exe"
+    },
+    "asarUnpack": [
+      "src/win/**"
+    ]
+  }
+}

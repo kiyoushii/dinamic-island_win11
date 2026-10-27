@@ -1,0 +1,33 @@
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+const on = (ch, fn) => ipcRenderer.on(ch, (_e, data) => fn(data));
+
+contextBridge.exposeInMainWorld('island', {
+  on,
+  mouse: (over) => ipcRenderer.send('mouse', over),
+  focus: () => ipcRenderer.send('focus'),
+  blur: () => ipcRenderer.send('blur'),
+  getStore: () => ipcRenderer.invoke('store:get'),
+  setStore: (key, value) => ipcRenderer.invoke('store:set', key, value),
+  media: (cmd) => ipcRenderer.send('media', cmd),
+  copy: (text) => ipcRenderer.send('copy', text),
+  paste: (text) => ipcRenderer.send('paste', text),
+  search: (q) => ipcRenderer.invoke('search', q),
+  open: (p) => ipcRenderer.send('open', p),
+  reveal: (p) => ipcRenderer.send('reveal', p),
+  run: (cmd) => ipcRenderer.send('run', cmd),
+  pickApp: () => ipcRenderer.invoke('pick-app'),
+  icon: (p) => ipcRenderer.invoke('icon', p),
+  dragOut: (p) => ipcRenderer.send('drag-out', p),
+  http: (opts) => ipcRenderer.invoke('http', opts),
+  capture: (mode) => ipcRenderer.send('capture', mode),
+  capDone: (res) => ipcRenderer.send('cap:done', res),
+  system: (what) => ipcRenderer.send('system', what),
+  getTheme: () => ipcRenderer.invoke('theme:get'),
+  setTheme: (m) => ipcRenderer.invoke('theme:set', m),
+  remind: (r) => ipcRenderer.send('remind', r),
+  notify: (n) => ipcRenderer.send('notify', n),
+  filePath: (file) => {
+    try { return webUtils.getPathForFile(file); } catch { return file.path; }
+  },
+});

@@ -3,7 +3,6 @@ name: Build Windows
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -22,9 +21,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Island-windows
-          path: |
-            dist/*.exe
-      - if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+          path: dist/*.exe
+      - id: ver
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      # Релиз v<версия из package.json>: создаётся при первой сборке версии, дальше файлы в нём обновляются
+      - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Island ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
           files: dist/*.exe
+          fail_on_unmatched_files: true
+          body: |
+            **Как скачать:** `Island-portable-${{ steps.ver.outputs.version }}.exe` запускается без установки, `Island-Setup-${{ steps.ver.outputs.version }}.exe` — установщик.
+            Если Windows SmartScreen предупредит о неизвестном издателе: «Подробнее» → «Выполнить в любом случае».

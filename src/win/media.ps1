@@ -54,20 +54,35 @@ function Await($op, $type) {
 
 [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime] | Out-Null
 [Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType = WindowsRuntime] | Out-Null
+[Windows.Storage.Streams.DataReader, Windows.Storage.Streams, ContentType = WindowsRuntime] | Out-Null
 $MgrT = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
 $PropsT = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]
 $mgr = Await ($MgrT::RequestAsync()) $MgrT
 
 function Get-Thumb($props) {
+  if ($null -eq $props.Thumbnail) { return $null }
   try {
-    if ($null -eq $props.Thumbnail) { return $null }
     $stream = Await ($props.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
+  } catch { return $null }
+  # способ 1: .NET-обёртка над потоком WinRT
+  try {
     $net = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($stream)
     $ms = New-Object System.IO.MemoryStream
     $net.CopyTo($ms)
-    $b64 = [Convert]::ToBase64String($ms.ToArray())
+    $bytes = $ms.ToArray()
     $net.Dispose(); $ms.Dispose()
-    return $b64
+    if ($bytes.Length -gt 0) { return [Convert]::ToBase64String($bytes) }
+  } catch {}
+  # способ 2: DataReader (работает, когда обёртка не привязывается к типу потока)
+  try {
+    $size = [uint32]$stream.Size
+    if ($size -eq 0) { return $null }
+    $dr = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
+    Await ($dr.LoadAsync($size)) ([uint32]) | Out-Null
+    $bytes = New-Object byte[] $size
+    $dr.ReadBytes($bytes)
+    $dr.Dispose()
+    return [Convert]::ToBase64String($bytes)
   } catch { return $null }
 }
 

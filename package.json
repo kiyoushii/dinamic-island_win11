@@ -1,7 +1,7 @@
 {
   "name": "island",
   "productName": "Island",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Dynamic Island для Windows",
   "main": "src/main.js",
   "author": "kiyoushii",

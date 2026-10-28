@@ -31,7 +31,7 @@ function sizeFor(s) {
   switch (s) {
     case 'pill': return [pillWidth(), 36];
     case 'toast': return [toastWide ? 560 : 500, 66];
-    case 'player': return [lyrics.lines.length && store.settings.lyrics ? 760 : 480, 152];
+    case 'player': return [(lyrics.lines.length && store.settings.lyrics) || lyricsPinned ? 760 : 480, 152];
     case 'panel': return [800, 430];
     case 'launcher': return [620, 54 + Math.min(launcher.items.length, 8) * 46 + (launcher.items.length ? 12 : 0)];
   }
@@ -104,7 +104,7 @@ setInterval(tick, 1000);
 
 // ================= музыка =================
 let media = null, volume = 0.5, muted = false, lastKey = null, lyricsPinned = false, playerTimer;
-const lyrics = { key: null, lines: [], source: '' };
+const lyrics = { key: null, lines: [], source: '', status: '' };
 
 island.on('media', (st) => {
   volume = st.volume; muted = st.muted;
@@ -215,31 +215,57 @@ $('#vol').addEventListener('change', () => { volDragging = false; });
 $('#vol-btn').addEventListener('click', () => island.media('mute'));
 
 // ---- слова песни (LRCLIB, бесплатно) ----
+// чистим название: «Песня (Official Video) [HD] feat. X» → «Песня»
+const cleanTitle = (t = '') => t.replace(/\s*[([【][^)\]】]*(official|video|audio|lyric|клип|премьера|hd|4k|mv|remaster|live)[^)\]】]*[)\]】]/gi, '')
+  .replace(/\s+(feat\.?|ft\.?|при уч\.)\s.*$/i, '').replace(/\s*[|│].*$/, '').trim();
+const cleanArtist = (a = '') => a.replace(/\s*-\s*topic$/i, '').replace(/\s*(vevo|official)$/i, '').split(/\s*[,&]\s*|\s+feat\.?\s+/i)[0].trim();
 async function loadLyrics(m) {
   const key = m.key || m.title;
-  lyrics.key = key; lyrics.lines = []; renderLyrics(0);
-  if (!store.settings.lyrics) return;
+  Object.assign(lyrics, { key, lines: [], status: 'loading', source: '' });
+  lastLyricIdx = -2; renderLyrics(0);
+  if (!store.settings.lyrics) { lyrics.status = 'off'; return; }
   const qs = (o) => Object.entries(o).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-  try {
-    let r = await island.http({ url: `https://lrclib.net/api/get?${qs({ artist_name: m.artist, track_name: m.title, album_name: m.album, duration: m.duration ? Math.round(m.duration) : '' })}` });
-    let data = r.ok ? r.json : null;
-    if (!data?.syncedLyrics) {
-      r = await island.http({ url: `https://lrclib.net/api/search?${qs({ track_name: m.title, artist_name: m.artist })}` });
-      data = Array.isArray(r.json) ? r.json.find((x) => x.syncedLyrics) : null;
-    }
-    if (lyrics.key !== key || !data?.syncedLyrics) return;
+  let title = m.title || '', artist = m.artist || '';
+  // YouTube и браузеры часто отдают «Исполнитель - Песня» в названии
+  const dash = /^(.+?)\s+[-–—]\s+(.+)$/.exec(title);
+  if (dash && (!artist || dash[1].toLowerCase().includes(cleanArtist(artist).toLowerCase()))) { artist = dash[1]; title = dash[2]; }
+  title = cleanTitle(title); artist = cleanArtist(artist);
+  const get = async (url) => { try { const r = await island.http({ url }); return r.ok ? r.json : null; } catch { return null; } };
+  const pick = (list, strict = false) => {
+    if (!Array.isArray(list)) return null;
+    const near = (x) => !m.duration || !x.duration || Math.abs(x.duration - m.duration) < 8;
+    const ok = strict ? list.filter(near) : list; // при поиске «по всему» берём только совпадающие по длительности
+    return ok.find((x) => x.syncedLyrics && near(x)) || ok.find((x) => x.syncedLyrics) || ok.find((x) => x.plainLyrics && near(x)) || ok.find((x) => x.plainLyrics) || null;
+  };
+  let data = await get(`https://lrclib.net/api/get?${qs({ artist_name: artist, track_name: title, album_name: m.album, duration: m.duration ? Math.round(m.duration) : '' })}`);
+  if (!data?.syncedLyrics) data = pick(await get(`https://lrclib.net/api/search?${qs({ track_name: title, artist_name: artist })}`)) || data;
+  if (!data?.syncedLyrics && !data?.plainLyrics) data = pick(await get(`https://lrclib.net/api/search?${qs({ q: `${artist} ${title}`.trim() })}`), true);
+  if (lyrics.key !== key) return;
+  if (data?.syncedLyrics) {
     lyrics.lines = data.syncedLyrics.split('\n').map((l) => {
       const mm = /^\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)$/.exec(l.trim());
       return mm ? { t: +mm[1] * 60 + +mm[2], text: mm[3] } : null;
     }).filter((l) => l && l.text);
-    lyrics.source = 'LRCLIB';
-    refresh();
-  } catch { /* нет сети — без слов */ }
+    lyrics.status = 'synced';
+  } else if (data?.plainLyrics) {
+    // текст без таймингов: раскладываем строки равномерно по длине трека
+    const rows = data.plainLyrics.split('\n').map((x) => x.trim()).filter(Boolean);
+    const dur = m.duration || data.duration || rows.length * 4;
+    lyrics.lines = rows.map((text, i) => ({ t: (dur * 0.05) + (dur * 0.9 * i) / rows.length, text }));
+    lyrics.status = 'plain';
+  } else lyrics.status = 'none';
+  lyrics.source = lyrics.status === 'plain' ? 'LRCLIB · без синхронизации' : 'LRCLIB';
+  lastLyricIdx = -2; renderLyrics(mediaPos());
+  refresh();
 }
 let lastLyricIdx = -2;
 function renderLyrics(pos) {
   const box = $('#mp-lyrics');
-  if (!lyrics.lines.length) { if (lastLyricIdx !== -1) { box.innerHTML = ''; lastLyricIdx = -1; } return; }
+  if (!lyrics.lines.length) {
+    const msg = { loading: 'Ищу слова…', none: 'Слов для этой песни не нашлось', off: 'Слова выключены в настройках' }[lyrics.status] || '';
+    if (lastLyricIdx !== msg) { box.innerHTML = msg ? `<p class="cur dim-msg">${msg}</p>${lyrics.status === 'none' ? '<p>Их нет в бесплатной базе LRCLIB</p>' : ''}` : ''; lastLyricIdx = msg; }
+    return;
+  }
   let i = lyrics.lines.findIndex((l) => l.t > pos + 0.25) - 1;
   if (i < -1) i = lyrics.lines.length - 1;
   if (i === lastLyricIdx) return;

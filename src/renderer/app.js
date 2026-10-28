@@ -782,14 +782,14 @@ function btIcon(name) {
 }
 async function loadBt() {
   bt.loading = true; renderControl();
-  bt = { ...(await island.btList()), loading: false };
+  bt = { radio: null, devices: [], errors: [], ...(await island.btList()), loading: false };
   if (tab === 'control' && state === 'panel') renderControl();
 }
 async function renderControl() {
   const theme = await island.getTheme();
   const s = store.settings;
   const tiles = [['lock', 'lock', 'Блокировка'], ['sleep', 'moon', 'Сон'], ['restart', 'restart', 'Перезагрузка'], ['shutdown', 'power', 'Выключение']];
-  const btOn = bt.radio !== 'Off';
+  const btOn = bt.radio !== 'Off' && bt.radio !== 'Disabled';
   const devs = bt.devices.slice().sort((a, b) => b.connected - a.connected);
   const btList = bt.loading && !devs.length ? '<div class="empty">Ищу устройства…</div>'
     : !btOn ? '<div class="empty">Bluetooth выключен</div>'
@@ -797,7 +797,7 @@ async function renderControl() {
           <div class="bt-ic">${icon(btIcon(d.name), 16)}</div>
           <div class="rb"><b>${esc(d.name)}</b><span>${d.connected ? 'Подключено' : 'Не подключено'}${d.battery != null ? ` · ${d.battery}%` : ''}</span></div>
           <button class="chip ${d.connected ? '' : 'accent'}" data-bt-open>${d.connected ? 'Отключить' : 'Подключить'}</button></div>`).join('')
-        : '<div class="empty">Нет сопряжённых устройств</div>';
+        : `<div class="empty">${bt.service && bt.service !== 'Running' ? 'Служба Bluetooth не запущена' : 'Нет сопряжённых устройств'}${(bt.errors || []).length ? `<div class="bt-err">${esc(bt.errors.join(' · '))}</div>` : ''}</div>`;
   const toggles = [
     ['vpn', vpn.on, 'VPN', vpn.busy ? 'Переключаю…' : vpn.on ? `Включён · ${vpn.via}` : (s.vpnConf ? 'Туннель AmneziaWG' : vpn.app ? vpn.app.split(/[\\/]/).pop().replace(/\.(lnk|exe)$/i, '') : 'Happ / Amnezia — укажи в настройках')],
     ['theme', theme === 'dark', 'Тёмная тема', 'Windows и приложения'],

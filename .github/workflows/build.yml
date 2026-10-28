@@ -17,6 +17,20 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Check PowerShell scripts (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          foreach ($f in Get-ChildItem src/win/*.ps1) {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errs)
+            if ($errs) { $errs | ForEach-Object { Write-Host "$($f.Name): $_" }; exit 1 }
+            Write-Host "OK $($f.Name)"
+          }
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $out = powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File src/win/bt.ps1
+          Write-Host "bt.ps1 за $($sw.Elapsed.TotalSeconds) с:"
+          $out | ForEach-Object { Write-Host $_ }
+          if (-not ($out | Select-String '^ISLAND_JSON \{')) { throw 'bt.ps1 не напечатал ISLAND_JSON' }
       - run: npx electron-builder --win nsis portable --publish never
       - uses: actions/upload-artifact@v4
         with:

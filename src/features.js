@@ -11,14 +11,16 @@ const AGENT_PORT = 47821;
 const HOOK_URL = `http://127.0.0.1:${AGENT_PORT}/agent/claude`;
 const HOOK_CMD = `curl -s -m 2 -X POST -H "Content-Type: application/json" --data-binary @- ${HOOK_URL} || exit 0`;
 
-function ps(script, args = []) {
+function ps(script, args = [], timeoutMs = 30000) {
   return new Promise((resolve) => {
     const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', ...(script.endsWith('.ps1') ? ['-File', script, ...args] : ['-Command', script])], { windowsHide: true });
-    let out = '';
-    p.stdout.setEncoding('utf8');
+    let out = '', err = '';
+    const timer = setTimeout(() => { err += `\nPowerShell не ответил за ${timeoutMs / 1000} с`; p.kill(); }, timeoutMs);
+    p.stdout.setEncoding('utf8'); p.stderr.setEncoding('utf8');
     p.stdout.on('data', (d) => { out += d; });
-    p.on('close', () => resolve(out.trim()));
-    p.on('error', () => resolve(''));
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('close', () => { clearTimeout(timer); resolve(Object.assign(new String(out.trim()), { err: err.trim() })); });
+    p.on('error', (e) => { clearTimeout(timer); resolve(Object.assign(new String(''), { err: e.message })); });
   });
 }
 const psQuote = (s) => `'${String(s).replace(/'/g, "''")}'`;
@@ -156,7 +158,7 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
       if (!exe) return { ok: false, error: 'Не найден amneziawg.exe или wireguard.exe в Program Files' };
       const name = path.basename(s.vpnConf).replace(/\.(conf|vpn)$/i, '');
       const args = on ? ['/installtunnelservice', s.vpnConf] : ['/uninstalltunnelservice', name];
-      await ps(`Start-Process -FilePath ${psQuote(exe)} -ArgumentList ${args.map((a) => psQuote(`"${a}"`)).join(',')} -Verb RunAs -WindowStyle Hidden -Wait`);
+      await ps(`Start-Process -FilePath ${psQuote(exe)} -ArgumentList ${args.map((a) => psQuote(`"${a}"`)).join(',')} -Verb RunAs -WindowStyle Hidden -Wait`, [], 180000);
     } else {
       const appPath = findVpnApp();
       if (!appPath) return { ok: false, error: 'Не нашёл Happ или AmneziaVPN — укажи программу в настройках' };
@@ -211,7 +213,18 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
     if (!IS_WIN) {
       return { radio: 'On', devices: [{ name: 'Наушники Air', connected: true, battery: 80 }, { name: 'Колонка Mini', connected: false }, { name: 'Мышь', connected: true, battery: 64 }] };
     }
-    try { return JSON.parse(await ps(winScript('bt.ps1'))); } catch { return { radio: null, devices: [] }; }
+    const out = await ps(winScript('bt.ps1'));
+    // берём только нашу строку: PowerShell может напечатать что-то ещё (предупреждения, прогресс)
+    const line = String(out).split(/\r?\n/).reverse().find((l) => l.startsWith('ISLAND_JSON '));
+    try {
+      const r = JSON.parse(line.slice('ISLAND_JSON '.length));
+      r.devices = [].concat(r.devices || []);
+      r.errors = [].concat(r.errors || []);
+      return r;
+    } catch {
+      const why = (out.err || String(out) || 'пустой ответ').replace(/\s+/g, ' ').slice(0, 300);
+      return { radio: null, devices: [], errors: [`Скрипт Bluetooth не ответил: ${why}`] };
+    }
   });
   ipcMain.handle('bt:radio', async (_e, on) => {
     if (!IS_WIN) return true;

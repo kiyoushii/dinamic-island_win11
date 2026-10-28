@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('island', {
   yandexLogin: () => ipcRenderer.invoke('yandex:login'),
   yandexLogout: () => ipcRenderer.invoke('yandex:logout'),
   yandexLyrics: (q) => ipcRenderer.invoke('lyrics:yandex', q),
+  findCover: (q) => ipcRenderer.invoke('cover:find', q),
   btRadio: (on) => ipcRenderer.invoke('bt:radio', on),
   icon: (p) => ipcRenderer.invoke('icon', p),
   dragOut: (p) => ipcRenderer.send('drag-out', p),

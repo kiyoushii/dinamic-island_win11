@@ -90,6 +90,7 @@ function Get-Thumb($props) {
 $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
 $pending = $reader.ReadLineAsync()
 $lastKey = ''
+$thumbTries = 0
 
 while ($true) {
   # --- команды ---
@@ -119,7 +120,12 @@ while ($true) {
     $tl = $s.GetTimelineProperties()
     $key = "$($props.Title)|$($props.Artist)"
     $sendThumb = $null
-    if ($key -ne $lastKey) { $sendThumb = Get-Thumb $props; $lastKey = $key }
+    if ($key -ne $lastKey) { $lastKey = $key; $thumbTries = 0 }
+    # плеер часто отдаёт обложку на секунду-две позже названия — пробуем ещё ~6 с
+    if ($thumbTries -ge 0 -and $thumbTries -lt 12) {
+      $sendThumb = Get-Thumb $props
+      if ($sendThumb) { $thumbTries = -1 } else { $thumbTries++ }
+    }
     $out.media = @{
       title    = $props.Title
       artist   = $props.Artist

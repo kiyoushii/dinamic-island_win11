@@ -358,3 +358,22 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 .actions .tile { height: 44px; }
 .bt-err { margin-top: 6px; font-size: 10.5px; color: var(--dim2); user-select: text; word-break: break-word; }
 .mp-lyrics p.dim-msg { color: var(--dim); font-weight: 500; font-size: 13px; }
+
+/* ---- главная v2: плеер с громкостью внутри, без пустот ---- */
+.home-grid { flex: none; align-items: stretch; }
+.player-card { flex: 1.35; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.pc-top { display: flex; gap: 14px; min-height: 0; }
+.player-card .art-lg { width: 128px; height: 128px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+.pc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pc-body b { font-size: 17px; margin-top: 2px; }
+.pc-body > span:not(.label) { font-size: 13.5px; margin-bottom: 0; }
+.pc-progress { margin-top: auto; }
+.pc-progress .times { margin-top: 4px; }
+.pc-body .pc-controls { margin-top: 6px; gap: 22px; }
+.pc-volume { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.pc-volume .dim { width: 26px; font-variant-numeric: tabular-nums; font-size: 12px; }
+.actions { grid-template-rows: repeat(4, 1fr); align-content: stretch; }
+.actions .tile { height: auto; min-height: 44px; }
+.ibtn.spin .ic { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.bt-card { flex: 1; }

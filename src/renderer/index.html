@@ -47,15 +47,17 @@
       <div class="pages">
         <section class="page" data-page="home">
           <div class="home-grid">
-            <div class="home-left">
-              <div class="card player-card">
+            <div class="card player-card">
+              <div class="pc-top">
                 <div id="pc-art" class="art-lg"></div>
                 <div class="pc-body">
                   <span class="label" id="pc-app">МУЗЫКА</span>
                   <b id="pc-title" class="ellipsis">Ничего не играет</b>
                   <span id="pc-artist" class="dim ellipsis">Включи музыку в любом плеере</span>
-                  <div class="progress" id="pc-progress"><div></div></div>
-                  <div class="times"><span id="pc-pos">0:00</span><span id="pc-left">-0:00</span></div>
+                  <div class="pc-progress">
+                    <div class="progress" id="pc-progress"><div></div></div>
+                    <div class="times"><span id="pc-pos">0:00</span><span id="pc-left">-0:00</span></div>
+                  </div>
                   <div class="pc-controls">
                     <button class="ibtn" data-media="prev">PREV</button>
                     <button class="playbtn" data-media="toggle" id="pc-play"></button>
@@ -63,7 +65,7 @@
                   </div>
                 </div>
               </div>
-              <div class="card volume-card">
+              <div class="pc-volume">
                 <button class="ibtn" id="vol-btn"></button>
                 <input type="range" id="vol" min="0" max="100" value="50">
                 <span class="dim" id="vol-val">50</span>

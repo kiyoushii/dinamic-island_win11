@@ -45,6 +45,42 @@ module.exports = function setup({ store, saveStore }) {
     w.loadURL(`https://oauth.yandex.ru/authorize?response_type=token&client_id=${CLIENT_ID}`);
   }));
 
+  // ---- обложка трека из интернета (когда плеер не отдал её в Windows) ----
+  async function imageData(url) {
+    const r = await net.fetch(url);
+    if (!r.ok) return null;
+    const type = r.headers.get('content-type') || 'image/jpeg';
+    if (!type.startsWith('image/')) return null;
+    return `data:${type};base64,${Buffer.from(await r.arrayBuffer()).toString('base64')}`;
+  }
+  const similar = (a, b) => { a = norm(a); b = norm(b); return !!a && !!b && (a === b || a.includes(b) || b.includes(a)); };
+  ipcMain.handle('cover:find', async (_e, { title, artist }) => {
+    const q = encodeURIComponent(`${artist || ''} ${title || ''}`.trim());
+    const tries = [];
+    if (token()) {
+      tries.push(async () => {
+        const s = await api(`/search?text=${q}&type=track&page=0`);
+        const t = (s.result?.tracks?.results || []).find((x) => similar(x.title, title) && (!artist || (x.artists || []).some((a) => similar(a.name, artist))));
+        const uri = t?.coverUri || t?.albums?.[0]?.coverUri;
+        return uri ? `https://${uri.replace('%%', '400x400')}` : null;
+      });
+    }
+    tries.push(async () => {
+      const r = await (await net.fetch(`https://api.deezer.com/search?q=${q}&limit=5`)).json();
+      const t = (r.data || []).find((x) => similar(x.title, title) && (!artist || similar(x.artist?.name, artist)));
+      return t?.album?.cover_xl || t?.album?.cover_big || null;
+    });
+    tries.push(async () => {
+      const r = await (await net.fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=5`)).json();
+      const t = (r.results || []).find((x) => similar(x.trackName, title) && (!artist || similar(x.artistName, artist)));
+      return t?.artworkUrl100 ? t.artworkUrl100.replace('100x100bb', '600x600bb') : null;
+    });
+    for (const f of tries) {
+      try { const url = await f(); if (url) { const data = await imageData(url); if (data) return data; } } catch {}
+    }
+    return null;
+  });
+
   ipcMain.handle('yandex:logout', () => { store().settings.yandexToken = ''; saveStore(); return true; });
 
   ipcMain.handle('lyrics:yandex', async (_e, { title, artist, duration }) => {

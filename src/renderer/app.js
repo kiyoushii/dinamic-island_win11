@@ -27,12 +27,14 @@ function pillWidth() {
   if (el.classList.contains('recording')) w = Math.max(w, 330);
   return w;
 }
+// высота панели по вкладке — без пустого места внизу
+const PANEL_H = { home: 330, control: 400, weather: 400, settings: 430 };
 function sizeFor(s) {
   switch (s) {
     case 'pill': return [pillWidth(), 36];
     case 'toast': return [toastWide ? 560 : 500, 66];
     case 'player': return [(lyrics.lines.length && store.settings.lyrics) || lyricsPinned ? 760 : 480, 152];
-    case 'panel': return [800, 430];
+    case 'panel': return [800, PANEL_H[tab] || 430];
     case 'launcher': return [620, 54 + Math.min(launcher.items.length, 8) * 46 + (launcher.items.length ? 12 : 0)];
   }
   return [300, 36];
@@ -116,6 +118,7 @@ island.on('media', (st) => {
     lastKey = key;
     if (media) {
       setArt(media.thumb);
+      if (!media.thumb) scheduleCover(media);
       loadLyrics(media);
       if (!first && state === 'pill') { setState('player'); playerTimer = setTimeout(() => { if (!over && !lyricsPinned) collapse(); }, 6000); }
     } else if (state === 'player') collapse();
@@ -130,13 +133,27 @@ function mediaPos() {
   if (media.playing && media.updated) p += (Date.now() - media.updated) / 1000;
   return media.duration ? Math.min(p, media.duration) : p;
 }
-function setArt(b64) {
-  const url = b64 ? `url(data:image/png;base64,${b64})` : '';
-  for (const id of ['#pill-art', '#mp-art', '#pc-art']) $(id).style.backgroundImage = url;
-  $('#pc-art').innerHTML = b64 ? '' : icon('wave', 34);
-  $('#mp-art').innerHTML = b64 ? '' : icon('wave', 22);
-  if (b64) accentFrom(`data:image/png;base64,${b64}`);
+// src: base64 от Windows или готовый data: URL (обложка из интернета)
+function setArt(src) {
+  const data = !src ? '' : src.startsWith('data:') ? src : `data:image/png;base64,${src}`;
+  for (const id of ['#pill-art', '#mp-art', '#pc-art']) $(id).style.backgroundImage = data ? `url("${data}")` : '';
+  $('#pc-art').innerHTML = data ? '' : icon('wave', 34);
+  $('#mp-art').innerHTML = data ? '' : icon('wave', 22);
+  if (data) accentFrom(data);
   else document.documentElement.style.setProperty('--music', '#e8b067');
+}
+// плеер не отдал обложку за пару секунд — ищем её по названию (Яндекс / Deezer / iTunes)
+let coverTimer, onlineCover = null;
+function scheduleCover(m) {
+  clearTimeout(coverTimer);
+  onlineCover = null;
+  const key = m.key || m.title;
+  coverTimer = setTimeout(async () => {
+    if (!media || (media.key || media.title) !== key || media.thumb) return;
+    const title = cleanTitle(m.title), artist = cleanArtist(m.artist || '');
+    const data = await island.findCover({ title, artist });
+    if (data && media && (media.key || media.title) === key && !media.thumb) { onlineCover = data; setArt(data); }
+  }, 2500);
 }
 function accentFrom(src) {
   const img = new Image();
@@ -478,6 +495,7 @@ $('#tabs').addEventListener('click', (e) => {
 });
 function showPage(id) {
   $$('.page').forEach((p) => p.classList.toggle('active', p.dataset.page === id));
+  if (state === 'panel') refresh();
   ({ clip: renderClips, shelf: renderShelf, text: openText, chat: renderChat, notes: renderNotes, control: () => { renderControl(); loadBt(); island.vpnStatus().then((v) => { vpn = { ...vpn, ...v }; renderControl(); }); }, settings: renderSettings, weather: renderWeather, home: renderDock })[id]?.();
   if (id === 'clip') setTimeout(() => $('#clip-q').focus(), 50);
 }
@@ -816,7 +834,8 @@ function btIcon(name) {
   return 'bluetooth';
 }
 async function loadBt() {
-  bt.loading = true; renderControl();
+  if (bt.loading) return;
+  bt.loading = true; if (tab === 'control' && state === 'panel') renderControl();
   bt = { radio: null, devices: [], errors: [], ...(await island.btList()), loading: false };
   if (tab === 'control' && state === 'panel') renderControl();
 }
@@ -841,7 +860,7 @@ async function renderControl() {
   $('#control').innerHTML = `
     <div class="card bt-card">
       <div class="bt-head"><span class="label">${icon('bluetooth', 13)}Устройства Bluetooth</span><span class="spacer"></span>
-        <button class="ibtn" data-bt-refresh title="Обновить">${icon('refresh', 14)}</button>
+        <button class="ibtn ${bt.loading ? 'spin' : ''}" data-bt-refresh title="Обновить">${icon('refresh', 14)}</button>
         <button class="ibtn" data-bt-open title="Параметры Bluetooth">${icon('gear', 14)}</button>
         <button class="switch ${btOn ? 'on' : ''}" data-bt-radio></button></div>
       <div class="bt-list">${btList}</div>
@@ -1133,4 +1152,5 @@ $('#lres').addEventListener('click', (e) => { const r = e.target.closest('[data-
   tick(); renderMedia(); renderTimer();
   setState('pill');
   loadWeather(); setInterval(loadWeather, 15 * 6e4);
+  setTimeout(loadBt, 5000); // список Bluetooth заранее, чтобы вкладка открывалась сразу
 })();

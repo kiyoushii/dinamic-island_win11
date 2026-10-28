@@ -54,8 +54,10 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
     return '';
   }
 
+  let lastEvent = null; // для строки «последнее событие» в настройках
   function handleAgent(kind, d) {
     const ev = d.hook_event_name;
+    lastEvent = { event: ev || d.event || '?', name: kind, t: Date.now() };
     const event = { UserPromptSubmit: 'start', PostToolUse: 'start', Notification: 'ask', Stop: 'done', SessionEnd: 'end' }[ev] || d.event;
     if (!event) return;
     const id = String(d.session_id || d.id || kind);
@@ -102,8 +104,8 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
   ipcMain.handle('agents:status', () => {
     try {
       const s = JSON.parse(fs.readFileSync(claudeSettings, 'utf8'));
-      return { installed: HOOK_EVENTS.every((e) => (s.hooks?.[e] || []).some(isCurrent)), port: AGENT_PORT };
-    } catch { return { installed: false, port: AGENT_PORT }; }
+      return { installed: HOOK_EVENTS.every((e) => (s.hooks?.[e] || []).some(isCurrent)), port: AGENT_PORT, lastEvent };
+    } catch { return { installed: false, port: AGENT_PORT, lastEvent }; }
   });
   const isOurs = (h) => JSON.stringify(h).includes(HOOK_URL);
   const isCurrent = (g) => (g.hooks || []).some((h) => h.type === 'http' && h.url === HOOK_URL);

@@ -953,7 +953,7 @@ async function renderSettings() {
     <div class="field row2"><div><label>Слова из Яндекс Музыки</label><div class="sub">${s.yandexToken ? '✓ Вход выполнен' : 'Русские песни, синхронный текст'}</div></div>
       <button class="chip ${s.yandexToken ? '' : 'accent'}" data-yandex="${s.yandexToken ? 'logout' : 'login'}">${s.yandexToken ? 'Выйти' : 'Войти'}</button></div>
     ${sw('recAudio', 'Записывать звук системы в видео')}
-    <div class="field wide row2"><div><label>Агенты · Claude Code (терминал и Claude Desktop)</label><div class="sub">${ag.installed ? '✓ Подключено — остров покажет, когда агент работает, ждёт ответа и закончил' : 'Остров добавит хуки в ~/.claude/settings.json (копия сохранится рядом)'}</div></div>
+    <div class="field wide row2"><div><label>Агенты · Claude Code (терминал и Claude Desktop)</label><div class="sub">${ag.installed ? `✓ Подключено · ${ag.lastEvent ? `последнее событие: ${esc(ag.lastEvent.event)}, ${ago(ag.lastEvent.t)}` : 'событий пока не было — начни новый чат'}` : 'Остров добавит хуки в ~/.claude/settings.json (копия сохранится рядом)'}</div></div>
       <button class="chip ${ag.installed ? '' : 'accent'}" data-agents="${ag.installed ? 'remove' : 'install'}">${ag.installed ? 'Отключить' : 'Подключить'}</button></div>
     ${pick('vpnApp', 'VPN: программа (Happ / AmneziaVPN)', 'найдётся сама', 'app')}
     ${pick('vpnConf', 'VPN: конфиг AmneziaWG (необязательно)', 'файл .conf', 'conf')}

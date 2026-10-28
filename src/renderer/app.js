@@ -49,7 +49,44 @@ function setState(s) {
   const [w, h] = sizeFor(s);
   el.style.width = w + 'px';
   el.style.height = h + 'px';
+  // центр острова — там, куда его поставили; у края экрана сдвигаем внутрь, чтобы панель влезла
+  const W = window.innerWidth;
+  el.style.left = Math.min(Math.max(placeOffset ?? W / 2, w / 2 + 8), W - w / 2 - 8) + 'px';
 }
+let placeOffset = null;
+island.on('place', ({ edge, offset }) => {
+  placeOffset = offset;
+  document.body.classList.toggle('edge-bottom', edge === 'bottom');
+  if (store) refresh();
+});
+
+// ---- перетаскивание: за пилюлю или за пустое место полосы вкладок ----
+let drag = null;
+el.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const onPill = state === 'pill' && !e.target.closest('button');
+  const onTabs = state === 'panel' && e.target.closest('#tabs') && !e.target.closest('button');
+  if (!onPill && !onTabs) return;
+  clearTimeout(hoverTimer);
+  const r = el.getBoundingClientRect();
+  drag = { x: e.screenX, y: e.screenY, grabDx: e.clientX - (r.left + r.width / 2), moving: false };
+});
+window.addEventListener('mousemove', (e) => {
+  if (!drag || drag.moving) return;
+  if (Math.hypot(e.screenX - drag.x, e.screenY - drag.y) < 6) return;
+  drag.moving = true;
+  document.body.classList.add('dragging');
+  island.dragStart(drag.grabDx);
+});
+const endDrag = () => {
+  if (!drag) return;
+  const was = drag.moving; drag = null;
+  if (!was) return;
+  document.body.classList.remove('dragging');
+  island.dragEnd();
+};
+window.addEventListener('mouseup', endDrag);
+window.addEventListener('blur', endDrag);
 const refresh = () => setState(state);
 
 function openPanel(t) {
@@ -68,6 +105,7 @@ function collapse() {
   setState('pill');
 }
 function keepOpen() {
+  if (hk.recording) return true;
   const a = document.activeElement;
   return document.hasFocus() && a && el.contains(a) && (a.matches('input, textarea') || a.isContentEditable);
 }
@@ -76,11 +114,12 @@ let hoverTimer, leaveTimer;
 el.addEventListener('mouseenter', () => {
   over = true; island.mouse(true);
   clearTimeout(leaveTimer);
-  if (state === 'pill' && !recorder.mr) hoverTimer = setTimeout(() => openPanel(), 140);
+  if (state === 'pill' && !recorder.mr) hoverTimer = setTimeout(() => { if (!drag) openPanel(); }, 140);
   if (state === 'toast') hoverTimer = setTimeout(() => { clearTimeout(toastTimer); currentToast = null; openPanel(); }, 700);
   if (state === 'player') clearTimeout(playerTimer);
 });
 el.addEventListener('mouseleave', () => {
+  if (drag?.moving) return; // во время перетаскивания окно едет за курсором
   over = false; island.mouse(false);
   clearTimeout(hoverTimer);
   if (state === 'panel' && !pinned && !keepOpen()) leaveTimer = setTimeout(collapse, 420);
@@ -1001,7 +1040,10 @@ async function renderSettings() {
   const pick = (key, label, ph, kind) => `<div class="field"><label>${label}</label><div class="pick"><input data-set="${key}" value="${esc(s[key])}" placeholder="${esc(ph)}"><button class="chip" data-pick="${key}" data-kind="${kind}">Выбрать</button></div></div>`;
   $('#settings').innerHTML = `
     ${f('city', 'Город для погоды (Enter — найти)', 'Москва')}
-    ${f('hotkey', 'Горячая клавиша поиска', 'Alt+Space')}
+    <div class="field row2"><div><label>Горячая клавиша поиска</label><div class="sub" id="hk-sub">Нажми кнопку и зажми новое сочетание</div></div>
+      <button class="hotkey-btn" id="hk-btn"><kbd>${esc(s.hotkey || 'Alt+Space')}</kbd></button></div>
+    <div class="field wide row2"><div><label>Положение острова</label><div class="sub">Перетащи остров за пилюлю или за пустое место на полосе вкладок — вдоль верхнего или нижнего края</div></div>
+      <div class="seg"><button class="chip ${document.body.classList.contains('edge-bottom') ? '' : 'on'}" data-place="top">Сверху</button><button class="chip ${document.body.classList.contains('edge-bottom') ? 'on' : ''}" data-place="bottom">Снизу</button><button class="chip" data-place="center">По центру</button></div></div>
     ${sw('autostart', 'Запускать вместе с Windows')}
     ${sw('mascot', 'Котик на острове')}
     ${sw('lyrics', 'Слова песен в мини-плеере')}
@@ -1045,6 +1087,11 @@ $('#settings').addEventListener('click', async (e) => {
     const file = await island.pickFile(p.dataset.kind);
     if (file) { saveSetting(p.dataset.pick, file); renderSettings(); }
   }
+  const pl = e.target.closest('[data-place]');
+  if (pl) {
+    island.placeSet(pl.dataset.place);
+    setTimeout(renderSettings, 100);
+  }
   const en = e.target.closest('[data-engine]');
   if (en) { saveSetting('aiEngine', en.dataset.engine); renderSettings(); }
   const co = e.target.closest('[data-copen]');
@@ -1070,10 +1117,63 @@ function save(key) { island.setStore(key, store[key]); }
 function saveSetting(k, v) {
   store.settings[k] = v; save('settings');
   if (k === 'lyrics' && v && media) loadLyrics(media);
-  if (k === 'hotkey') $('#lkbd').textContent = v;
   refresh();
 }
 island.on('store', (s) => { store = s; refresh(); });
+
+// ================= запись горячей клавиши =================
+const hk = { recording: false };
+// e.code не зависит от раскладки: на русской «Ф» всё равно KeyA → A
+function keyName(code) {
+  let m;
+  if ((m = /^Key([A-Z])$/.exec(code))) return m[1];
+  if ((m = /^Digit(\d)$/.exec(code))) return m[1];
+  if ((m = /^(F\d{1,2})$/.exec(code))) return m[1];
+  if ((m = /^Numpad(\d)$/.exec(code))) return 'num' + m[1];
+  return {
+    Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert',
+    Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+    ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+    Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+    Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/',
+    NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult', NumpadDivide: 'numdiv', NumpadDecimal: 'numdec',
+  }[code] || null;
+}
+const mods = (e) => [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean);
+function hkStop() {
+  hk.recording = false;
+  window.removeEventListener('keydown', hkKey, true);
+  island.hotkeyPause(false);
+}
+async function hkKey(e) {
+  e.preventDefault(); e.stopPropagation();
+  const btn = $('#hk-btn'), sub = $('#hk-sub');
+  if (!btn) return hkStop();
+  const m = mods(e);
+  if (e.code === 'Escape' && !m.length) { hkStop(); btn.innerHTML = `<kbd>${esc(store.settings.hotkey)}</kbd>`; btn.classList.remove('rec'); sub.textContent = 'Отменено'; return; }
+  const key = keyName(e.code);
+  if (!key) { btn.innerHTML = `<kbd>${esc([...m, '…'].join('+'))}</kbd>`; return; } // пока зажаты только модификаторы
+  if (!m.length && !/^F\d/.test(key)) { sub.textContent = 'Нужен модификатор: Ctrl, Alt, Shift или Win (или одна из F1–F24)'; return; }
+  const acc = [...m, key].join('+');
+  hkStop();
+  btn.classList.remove('rec');
+  const r = await island.hotkeySet(acc);
+  if (r.ok) {
+    store.settings.hotkey = acc; $('#lkbd').textContent = acc;
+    btn.innerHTML = `<kbd>${esc(acc)}</kbd>`; sub.textContent = '✓ Сохранено';
+  } else {
+    btn.innerHTML = `<kbd>${esc(r.hotkey || store.settings.hotkey)}</kbd>`;
+    sub.innerHTML = `<span style="color:var(--danger)">${esc(acc)} занято другой программой</span> — попробуй другое`;
+  }
+}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('#hk-btn'); if (!btn || hk.recording) return;
+  hk.recording = true;
+  btn.classList.add('rec'); btn.innerHTML = '<kbd>Нажми сочетание…</kbd>';
+  $('#hk-sub').textContent = 'Esc — отмена';
+  island.focus(); island.hotkeyPause(true);
+  window.addEventListener('keydown', hkKey, true);
+});
 
 // ================= строка поиска (Alt+Space) =================
 const launcher = { items: [], sel: 0, seq: 0 };

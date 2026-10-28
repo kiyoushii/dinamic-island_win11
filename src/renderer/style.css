@@ -380,3 +380,17 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 .seg { display: flex; gap: 4px; }
 .seg .chip.on { background: #fff; color: #000; }
 #chat-open { flex: none; }
+
+/* ---- остров внизу экрана: растёт вверх ---- */
+body.edge-bottom #island { top: auto; bottom: 0; border-radius: 20px 20px 0 0; box-shadow: 0 -10px 30px rgba(0, 0, 0, .35); }
+body.edge-bottom #island.wavy { border-radius: 6px 6px 0 0; }
+body.edge-bottom #wave { top: auto; bottom: 100%; margin-top: 0; margin-bottom: -1px; transform: scaleY(-1); }
+body.dragging #island { transition: none; cursor: grabbing; }
+body.dragging * { cursor: grabbing !important; }
+.tabs { cursor: grab; }
+.tabs .tab { cursor: pointer; }
+.hotkey-btn { background: var(--card2); border-radius: 9px; padding: 5px 8px; min-width: 120px; }
+.hotkey-btn kbd { background: none; color: #fff; font-size: 12.5px; font-weight: 600; padding: 0; }
+.hotkey-btn:hover { background: #2c2c30; }
+.hotkey-btn.rec { outline: 1.5px solid var(--accent); }
+.hotkey-btn.rec kbd { color: var(--accent); }

@@ -48,7 +48,7 @@ function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
   win = new BrowserWindow({
     width: WIN_W, height: WIN_H,
-    x: Math.round(workArea.x + (workArea.width - WIN_W) / 2), y: workArea.y,
+    x: Math.round(workArea.x + (workArea.width - WIN_W) / 2), y: workArea.y, // точное место — place()
     frame: false, transparent: true, resizable: false, movable: false,
     skipTaskbar: true, alwaysOnTop: true, hasShadow: false, show: false,
     backgroundColor: '#00000000',
@@ -58,7 +58,8 @@ function createWindow() {
   win.setVisibleOnAllWorkspaces(true);
   win.setIgnoreMouseEvents(true, { forward: true });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.once('ready-to-show', () => win.showInactive());
+  win.once('ready-to-show', () => { place(); win.showInactive(); });
+  win.webContents.on('did-finish-load', place);
   win.on('blur', () => send('blur'));
   // Alt+F4 не должен убивать остров — закрываем окно только при выходе из программы
   win.on('close', (e) => { if (!quitting) e.preventDefault(); });
@@ -82,7 +83,10 @@ ipcMain.on('focus', () => { if (alive()) win.focus(); });
 ipcMain.on('blur', () => { if (alive()) win.blur(); });
 
 ipcMain.handle('store:get', () => store);
+// поля, которыми владеет только главный процесс (у интерфейса может быть устаревшая копия)
+const MAIN_OWNED = ['pos', 'yandexToken', 'hotkey'];
 ipcMain.handle('store:set', (_e, key, value) => {
+  if (key === 'settings') for (const k of MAIN_OWNED) value[k] = store.settings[k];
   store[key] = value; saveStore();
   if (key === 'settings') applySettings();
   return true;
@@ -213,21 +217,40 @@ function downloadsLoop() {
 }
 
 // ---------- горячая клавиша ----------
-let currentHotkey;
-function registerHotkey() {
-  if (currentHotkey) globalShortcut.unregister(currentHotkey);
-  currentHotkey = store.settings.hotkey || 'Alt+Space';
-  let ok = false;
-  try {
-    ok = globalShortcut.register(currentHotkey, () => {
-      if (!alive()) return;
-      win.setIgnoreMouseEvents(false);
-      win.focus();
-      send('launcher');
-    });
-  } catch {}
-  if (!ok) setTimeout(() => toast({ icon: 'info', title: `Не удалось занять ${currentHotkey}`, text: 'Её использует другая программа — смени клавишу в настройках острова', force: true }), 3000);
+let currentHotkey = null;
+function onHotkey() {
+  if (!alive()) return;
+  win.setIgnoreMouseEvents(false);
+  win.focus();
+  send('launcher');
 }
+function tryRegister(acc) { try { return globalShortcut.register(acc, onHotkey); } catch { return false; } }
+// регистрируем только если сочетание поменялось — раньше это происходило при каждом сохранении настроек
+function registerHotkey() {
+  const want = store.settings.hotkey || 'Alt+Space';
+  if (want === currentHotkey && globalShortcut.isRegistered(want)) return true;
+  if (currentHotkey) globalShortcut.unregister(currentHotkey);
+  currentHotkey = null;
+  if (tryRegister(want)) { currentHotkey = want; return true; }
+  setTimeout(() => toast({ icon: 'info', title: `Не удалось занять ${want}`, text: 'Сочетание занято другой программой — запиши другое в настройках острова', force: true }), 3000);
+  return false;
+}
+ipcMain.handle('hotkey:set', (_e, acc) => {
+  const prev = currentHotkey;
+  if (prev) globalShortcut.unregister(prev);
+  if (typeof acc === 'string' && tryRegister(acc)) {
+    currentHotkey = acc; store.settings.hotkey = acc; saveStore();
+    return { ok: true, hotkey: acc };
+  }
+  currentHotkey = prev && tryRegister(prev) ? prev : null; // новое занято — возвращаем старое
+  return { ok: false, hotkey: currentHotkey };
+});
+// пока пользователь записывает новое сочетание, старое не должно открывать поиск
+ipcMain.on('hotkey:pause', (_e, paused) => {
+  if (!currentHotkey) return;
+  if (paused) globalShortcut.unregister(currentHotkey);
+  else if (!globalShortcut.isRegistered(currentHotkey)) tryRegister(currentHotkey);
+});
 
 // ---------- поиск программ и файлов ----------
 let appIndex = [];
@@ -468,6 +491,45 @@ ipcMain.on('notify', (_e, n) => {
   if (n.system && Notification.isSupported()) new Notification({ title: n.title, body: n.text || '' }).show();
 });
 
+// ---------- положение острова: верх/низ экрана, любая точка по горизонтали ----------
+// settings.pos = { edge: 'top'|'bottom', cx: доля ширины рабочей области (null — по центру), display: id }
+function placeOn() {
+  const pos = store.settings.pos || {};
+  const d = screen.getAllDisplays().find((x) => x.id === pos.display) || screen.getPrimaryDisplay();
+  return { pos, wa: d.workArea };
+}
+function place() {
+  if (!alive()) return;
+  const { pos, wa } = placeOn();
+  const cx = wa.x + (pos.cx == null ? 0.5 : pos.cx) * wa.width; // центр острова на экране
+  const x = Math.round(Math.min(Math.max(cx - WIN_W / 2, wa.x), wa.x + wa.width - WIN_W));
+  const edge = pos.edge === 'bottom' ? 'bottom' : 'top';
+  const y = edge === 'top' ? wa.y : wa.y + wa.height - WIN_H;
+  win.setBounds({ x, y, width: WIN_W, height: WIN_H });
+  send('place', { edge, offset: Math.round(cx - x) });
+}
+let dragTimer = null;
+ipcMain.on('drag-start', (_e, grabDx) => {
+  clearInterval(dragTimer);
+  dragTimer = setInterval(() => {
+    if (!alive()) return clearInterval(dragTimer);
+    const p = screen.getCursorScreenPoint();
+    const d = screen.getDisplayNearestPoint(p);
+    const wa = d.workArea;
+    let cx = (p.x - grabDx - wa.x) / wa.width;
+    cx = Math.min(Math.max(cx, 0), 1);
+    if (Math.abs(cx - 0.5) * wa.width < 40) cx = null; // магнит к центру
+    store.settings.pos = { edge: p.y > wa.y + wa.height / 2 ? 'bottom' : 'top', cx, display: d.id };
+    place();
+  }, 16);
+});
+ipcMain.on('drag-end', () => { clearInterval(dragTimer); dragTimer = null; saveStore(); });
+ipcMain.on('place-set', (_e, what) => {
+  const pos = { ...(store.settings.pos || {}) };
+  if (what === 'center') pos.cx = null; else pos.edge = what === 'bottom' ? 'bottom' : 'top';
+  store.settings.pos = pos; saveStore(); place();
+});
+
 // ---------- курсор для маскота ----------
 let cursorTimer;
 function cursorLoop() {
@@ -510,11 +572,8 @@ app.whenReady().then(() => {
   require('./features')({ send, toast, store: () => store, saveStore, getWin: () => win, appIndex: () => appIndex });
   require('./yandex')({ store: () => store, saveStore });
   require('./claude')();
-  screen.on('display-metrics-changed', () => {
-    if (!alive()) return;
-    const { workArea } = screen.getPrimaryDisplay();
-    win.setBounds({ x: Math.round(workArea.x + (workArea.width - WIN_W) / 2), y: workArea.y, width: WIN_W, height: WIN_H });
-  });
+  screen.on('display-metrics-changed', place);
+  screen.on('display-removed', place);
 });
 app.on('second-instance', () => send('expand'));
 app.on('will-quit', () => { globalShortcut.unregisterAll(); if (ps) ps.kill(); });

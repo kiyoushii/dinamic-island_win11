@@ -377,3 +377,6 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px;
 .ibtn.spin .ic { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .bt-card { flex: 1; }
+.seg { display: flex; gap: 4px; }
+.seg .chip.on { background: #fff; color: #000; }
+#chat-open { flex: none; }

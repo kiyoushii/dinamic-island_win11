@@ -55,7 +55,10 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
   }
 
   let lastEvent = null; // для строки «последнее событие» в настройках
+  const chatDir = path.resolve(require('./claude').chatDir());
   function handleAgent(kind, d) {
+    // вопросы из чата острова (claude -p в своей папке) — это не «агент работает»
+    if (d.cwd && path.resolve(d.cwd).toLowerCase() === chatDir.toLowerCase()) return;
     const ev = d.hook_event_name;
     lastEvent = { event: ev || d.event || '?', name: kind, t: Date.now() };
     const event = { UserPromptSubmit: 'start', PostToolUse: 'start', Notification: 'ask', Stop: 'done', SessionEnd: 'end' }[ev] || d.event;

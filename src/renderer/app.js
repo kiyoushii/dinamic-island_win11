@@ -496,7 +496,7 @@ $('#tabs').addEventListener('click', (e) => {
 function showPage(id) {
   $$('.page').forEach((p) => p.classList.toggle('active', p.dataset.page === id));
   if (state === 'panel') refresh();
-  ({ clip: renderClips, shelf: renderShelf, text: openText, chat: renderChat, notes: renderNotes, control: () => { renderControl(); loadBt(); island.vpnStatus().then((v) => { vpn = { ...vpn, ...v }; renderControl(); }); }, settings: renderSettings, weather: renderWeather, home: renderDock })[id]?.();
+  ({ clip: renderClips, shelf: renderShelf, text: openText, chat: () => { renderChat(); island.claudeStatus().then((c) => { claudeInfo = c; renderChat(); }); }, notes: renderNotes, control: () => { renderControl(); loadBt(); island.vpnStatus().then((v) => { vpn = { ...vpn, ...v }; renderControl(); }); }, settings: renderSettings, weather: renderWeather, home: renderDock })[id]?.();
   if (id === 'clip') setTimeout(() => $('#clip-q').focus(), 50);
 }
 
@@ -645,12 +645,17 @@ $('#tt-copy').addEventListener('click', () => island.copy(ttInput.value));
 $('#tt-clear').addEventListener('click', () => { ttInput.value = ''; ttStats(); ttInput.focus(); });
 
 // ================= чат с ИИ =================
-const chat = { msgs: [], busy: false, file: null };
+const chat = { msgs: [], busy: false, file: null, session: null, sentUpTo: 0 };
+let claudeInfo = { cli: false, desktop: false };
+const useClaude = () => (store.settings.aiEngine || 'claude') === 'claude';
 const SUGGEST = ['Объясни простыми словами, как работает VPN', 'Помоги написать вежливое письмо о переносе встречи', 'Придумай пять идей, чем заняться в выходные'];
 function renderChat() {
   const log = $('#chat-log');
   if (!chat.msgs.length) {
-    log.innerHTML = `<div class="chat-empty">${icon('sparkle', 26)}<b>Спроси что угодно</b><span class="dim">Модель: ${esc(store.settings.aiModel)} · Enter — отправить</span>
+    const engine = !useClaude() ? `Модель: ${esc(store.settings.aiModel)} · Enter — отправить`
+      : claudeInfo.cli ? 'Claude через Claude Code · Enter — ответ здесь, «Открыть в Claude» — новый чат'
+        : 'Claude Code не найден · Enter откроет вопрос новым чатом в Claude';
+    log.innerHTML = `<div class="chat-empty">${icon('sparkle', 26)}<b>Спроси что угодно</b><span class="dim">${engine}</span>
       ${SUGGEST.map((s) => `<button class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
   } else {
     log.innerHTML = chat.msgs.map((m) => m.file
@@ -661,11 +666,22 @@ function renderChat() {
     log.scrollTop = log.scrollHeight;
   }
   $('#chat-file').textContent = chat.file ? chat.file.name : '';
-  $('#chat-send').disabled = chat.busy;
+  $('#chat-send').disabled = false;
+  $('#chat-send').innerHTML = icon(chat.busy ? 'stop' : 'send', 16);
+  $('#chat-send').title = chat.busy ? 'Остановить' : 'Отправить';
 }
 const fmtAi = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^[-*] /gm, '• ').replace(/`([^`]+)`/g, '<code>$1</code>');
 $('#chat-log').addEventListener('click', (e) => { const s = e.target.closest('[data-s]'); if (s) sendChat(s.dataset.s); });
-$('#chat-send').addEventListener('click', () => sendChat($('#chat-q').value));
+$('#chat-send').addEventListener('click', () => { if (chat.busy) { island.claudeCancel(); return; } sendChat($('#chat-q').value); });
+$('#chat-new').addEventListener('click', () => { if (chat.busy) return; chat.msgs = []; chat.session = null; chat.sentUpTo = 0; chat.file = null; renderChat(); $('#chat-q').focus(); });
+$('#chat-open').addEventListener('click', () => {
+  const q = $('#chat-q').value.trim() || [...chat.msgs].reverse().find((m) => m.role === 'user' && !m.file)?.content || '';
+  if (q) openInClaude(q); else showToast({ icon: 'sparkle', title: 'Сначала напиши вопрос', text: 'Он откроется новым чатом в Claude', force: true });
+});
+async function openInClaude(q) {
+  const r = await island.claudeOpen({ q, target: store.settings.claudeOpen });
+  showToast({ icon: 'sparkle', title: r.desktop ? 'Открываю в Claude Desktop' : 'Открываю claude.ai', text: 'Вопрос ещё и в буфере — если не подставился, нажми Ctrl+V', force: true });
+}
 $('#chat-q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat($('#chat-q').value); } });
 $('#chat-attach').addEventListener('click', () => $('#chat-file-input').click());
 $('#chat-file-input').addEventListener('change', (e) => { if (e.target.files[0]) attachToChat(e.target.files[0]); e.target.value = ''; });
@@ -683,23 +699,42 @@ async function sendChat(q) {
     chat.file = null;
   }
   chat.msgs.push({ role: 'user', content: q });
+  if (useClaude() && !claudeInfo.cli) { // Claude Code не установлен — открываем вопрос новым чатом
+    chat.msgs.push({ role: 'assistant', content: 'Открыл вопрос новым чатом в Claude.' });
+    renderChat(); openInClaude(q); return;
+  }
   chat.busy = true; mascot('think'); renderChat();
   const s = store.settings;
   try {
-    const r = await island.http({
-      url: s.aiUrl.replace(/\/+$/, '') + '/chat/completions', method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(s.aiKey ? { Authorization: `Bearer ${s.aiKey}` } : {}) },
-      body: {
-        model: s.aiModel,
-        messages: [{ role: 'system', content: 'Ты — помощник внутри Island, динамического острова для Windows. Отвечай кратко и по делу, на языке пользователя. Если просят итог — дай его по пунктам.' },
-          ...chat.msgs.filter((m) => !m.err).map(({ role, content }) => ({ role, content }))],
-      },
-    });
-    const text = r.json?.choices?.[0]?.message?.content;
-    if (!text) throw new Error(r.json?.error?.message || r.text || `Ошибка ${r.status}`);
-    chat.msgs.push({ role: 'assistant', content: text.trim() });
+    if (useClaude()) {
+      // файл и вопрос уходят одним сообщением; разговор продолжается через --resume
+      const pending = chat.msgs.filter((m, i) => i >= chat.sentUpTo);
+      const prompt = pending.map((m) => m.content).join('\n\n');
+      let r = await island.claudeAsk({ prompt, resume: chat.session });
+      if (!r.ok && chat.session && /session|сесси|not found/i.test(r.error || '')) r = await island.claudeAsk({ prompt, resume: null });
+      if (!r.ok) throw new Error(r.error);
+      chat.session = r.session || chat.session;
+      chat.msgs.push({ role: 'assistant', content: r.text.trim() });
+      chat.sentUpTo = chat.msgs.length;
+    } else {
+      const r = await island.http({
+        url: s.aiUrl.replace(/\/+$/, '') + '/chat/completions', method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(s.aiKey ? { Authorization: `Bearer ${s.aiKey}` } : {}) },
+        body: {
+          model: s.aiModel,
+          messages: [{ role: 'system', content: 'Ты — помощник внутри Island, динамического острова для Windows. Отвечай кратко и по делу, на языке пользователя. Если просят итог — дай его по пунктам.' },
+            ...chat.msgs.filter((m) => !m.err).map(({ role, content }) => ({ role, content }))],
+        },
+      });
+      const text = r.json?.choices?.[0]?.message?.content;
+      if (!text) throw new Error(r.json?.error?.message || r.text || `Ошибка ${r.status}`);
+      chat.msgs.push({ role: 'assistant', content: text.trim() });
+    }
   } catch (err) {
-    chat.msgs.push({ role: 'assistant', err: true, content: `Не удалось получить ответ: ${err.message}\nПроверь адрес и модель во вкладке «Настройки» (бесплатно: Ollama на этом компьютере или ключ Groq / OpenRouter).` });
+    chat.msgs.push({ role: 'assistant', err: true, content: useClaude()
+      ? `Claude не ответил: ${err.message}\nМожно нажать «Открыть в Claude» — вопрос откроется новым чатом.`
+      : `Не удалось получить ответ: ${err.message}\nПроверь адрес и модель во вкладке «Настройки».` });
+    chat.sentUpTo = chat.msgs.length;
   }
   chat.busy = false; mascot(); renderChat();
   if (state !== 'panel') showToast({ icon: 'sparkle', title: 'Ответ готов', text: chat.msgs.at(-1).content.slice(0, 90) });
@@ -959,6 +994,7 @@ $('#rec-stop').addEventListener('click', (e) => { e.stopPropagation(); stopRecor
 // ================= настройки =================
 async function renderSettings() {
   const s = store.settings;
+  claudeInfo = await island.claudeStatus();
   const ag = await island.agentsStatus();
   const f = (key, label, ph = '', type = 'text', wide = false) => `<div class="field ${wide ? 'wide' : ''}"><label>${label}</label><input data-set="${key}" type="${type}" value="${esc(s[key])}" placeholder="${esc(ph)}"></div>`;
   const sw = (key, label) => `<div class="field row2"><div><label>${label}</label></div><button class="switch ${s[key] ? 'on' : ''}" data-tgs="${key}"></button></div>`;
@@ -976,12 +1012,16 @@ async function renderSettings() {
       <button class="chip ${ag.installed ? '' : 'accent'}" data-agents="${ag.installed ? 'remove' : 'install'}">${ag.installed ? 'Отключить' : 'Подключить'}</button></div>
     ${pick('vpnApp', 'VPN: программа (Happ / AmneziaVPN)', 'найдётся сама', 'app')}
     ${pick('vpnConf', 'VPN: конфиг AmneziaWG (необязательно)', 'файл .conf', 'conf')}
-    ${f('aiUrl', 'ИИ: адрес (OpenAI-совместимый)', 'http://localhost:11434/v1', 'text', true)}
+    <div class="field wide row2"><div><label>Чат: чем отвечать</label><div class="sub">${useClaude() ? (claudeInfo.cli ? '✓ Claude Code найден — ответы прямо на острове, по твоей подписке' : 'Claude Code не найден — вопросы будут открываться новым чатом в Claude') : 'Свой сервер: Ollama, Groq, OpenRouter…'}</div></div>
+      <div class="seg"><button class="chip ${useClaude() ? 'on' : ''}" data-engine="claude">Claude</button><button class="chip ${useClaude() ? '' : 'on'}" data-engine="openai">Свой сервер</button></div></div>
+    ${useClaude() ? `<div class="field wide row2"><div><label>«Открыть в Claude» открывает</label></div>
+      <div class="seg"><button class="chip ${s.claudeOpen !== 'browser' ? 'on' : ''}" data-copen="desktop">Claude Desktop</button><button class="chip ${s.claudeOpen === 'browser' ? 'on' : ''}" data-copen="browser">Браузер</button></div></div>`
+    : `${f('aiUrl', 'ИИ: адрес (OpenAI-совместимый)', 'http://localhost:11434/v1', 'text', true)}
     ${f('aiModel', 'ИИ: модель', 'llama3.2')}
-    ${f('aiKey', 'ИИ: ключ (если нужен)', 'не нужен для Ollama', 'password')}
+    ${f('aiKey', 'ИИ: ключ (если нужен)', 'не нужен для Ollama', 'password')}`}
     <div class="note2"><b>VPN.</b> С программой Happ / AmneziaVPN остров запускает и закрывает её. Включи в ней «подключаться при запуске», тогда переключатель включает VPN сразу. С конфигом AmneziaWG остров поднимает туннель сам, без приложения, а Windows один раз спросит права администратора.<br>
     <b>Другие агенты</b> (Codex, Aider, свои скрипты) могут писать на <code>http://127.0.0.1:${ag.port}/agent/имя</code> JSON вида <code>{"event":"start|ask|done","text":"…"}</code>.<br>
-    <b>ИИ бесплатно:</b> Ollama на этом компе (<code>ollama pull llama3.2</code>), ключ Groq (https://api.groq.com/openai/v1, llama-3.3-70b-versatile) или OpenRouter (модели :free).<br>
+    <b>Чат с Claude:</b> если установлен Claude Code (<code>claude</code> в терминале), ответы приходят прямо на остров и считаются в лимиты твоей подписки, без API-ключа. Иначе вопрос открывается новым чатом в Claude Desktop или на claude.ai. «Свой сервер» — Ollama, Groq, OpenRouter.<br>
     Скриншоты лежат в «Изображения/Island», записи экрана — в «Видео/Island».</div>`;
 }
 $('#settings').addEventListener('change', (e) => {
@@ -1005,6 +1045,10 @@ $('#settings').addEventListener('click', async (e) => {
     const file = await island.pickFile(p.dataset.kind);
     if (file) { saveSetting(p.dataset.pick, file); renderSettings(); }
   }
+  const en = e.target.closest('[data-engine]');
+  if (en) { saveSetting('aiEngine', en.dataset.engine); renderSettings(); }
+  const co = e.target.closest('[data-copen]');
+  if (co) { saveSetting('claudeOpen', co.dataset.copen); renderSettings(); }
   const y = e.target.closest('[data-yandex]');
   if (y) {
     const ok = y.dataset.yandex === 'login' ? await island.yandexLogin() : await island.yandexLogout();
@@ -1086,7 +1130,8 @@ async function updateLauncher() {
     if (conv?.type === 'currency') items.push({ icon: 'calc', title: 'Считаю курс…', sub: `${conv.from} → ${conv.to}`, id: 'cur', run: () => {} });
     const ql = q.toLowerCase();
     items.push(...L_ACTIONS.filter((a) => a.keys.split(' ').some((k) => k.startsWith(ql)) || a.title.toLowerCase().includes(ql)));
-    items.push({ icon: 'sparkle', title: `Спросить ИИ: «${q}»`, hint: 'нейросеть', run: () => { openPanel('chat'); sendChat(q); }, stay: true });
+    items.push({ icon: 'sparkle', title: `Спросить Claude: «${q}»`, hint: useClaude() && claudeInfo.cli ? 'ответ здесь' : 'нейросеть', run: () => { openPanel('chat'); sendChat(q); }, stay: true });
+    if (useClaude()) items.push({ icon: 'open', title: `Открыть в Claude: «${q}»`, hint: 'новый чат', run: () => openInClaude(q) });
     items.push({ icon: 'globe', title: `Искать в браузере: «${q}»`, hint: 'Яндекс', run: () => island.open('https://ya.ru/search/?text=' + encodeURIComponent(q)) });
     if (conv?.type === 'currency') {
       getRates().then((r) => {
@@ -1145,12 +1190,13 @@ $('#lres').addEventListener('click', (e) => { const r = e.target.closest('[data-
   for (const s of $$('.si')) s.innerHTML = icon('search', 16);
   $('#clip-clear').innerHTML = icon('trash', 15);
   $('#tt-copy').innerHTML = icon('copy', 15); $('#tt-clear').innerHTML = icon('trash', 15);
-  $('#chat-attach').innerHTML = icon('attach', 16); $('#chat-send').innerHTML = icon('send', 16);
+  $('#chat-attach').innerHTML = icon('attach', 16); $('#chat-send').innerHTML = icon('send', 16); $('#chat-new').innerHTML = icon('plus', 16);
   $('.lic').innerHTML = icon('bell', 12);
   $('#lkbd').textContent = store.settings.hotkey;
   setArt(null);
   tick(); renderMedia(); renderTimer();
   setState('pill');
   loadWeather(); setInterval(loadWeather, 15 * 6e4);
-  setTimeout(loadBt, 5000); // список Bluetooth заранее, чтобы вкладка открывалась сразу
+  setTimeout(loadBt, 5000);
+  island.claudeStatus().then((c) => { claudeInfo = c; }); // список Bluetooth заранее, чтобы вкладка открывалась сразу
 })();

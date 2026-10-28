@@ -21,6 +21,7 @@ const defaults = {
     vpnApp: '', vpnConf: '', recAudio: true, yandexToken: '',
     city: 'Москва', lat: 55.7558, lon: 37.6173,
     hotkey: 'Alt+Space', mascot: true, dnd: false, autostart: false,
+    aiEngine: 'claude', claudeOpen: 'desktop',
     aiUrl: 'http://localhost:11434/v1', aiKey: '', aiModel: 'llama3.2',
     lyrics: true,
   },
@@ -508,6 +509,7 @@ app.whenReady().then(() => {
   setTimeout(() => { buildAppIndex(); buildFileIndex(); }, 1500);
   require('./features')({ send, toast, store: () => store, saveStore, getWin: () => win, appIndex: () => appIndex });
   require('./yandex')({ store: () => store, saveStore });
+  require('./claude')();
   screen.on('display-metrics-changed', () => {
     if (!alive()) return;
     const { workArea } = screen.getPrimaryDisplay();

@@ -221,7 +221,7 @@ const cleanTitle = (t = '') => t.replace(/\s*[([【][^)\]】]*(official|video|au
 const cleanArtist = (a = '') => a.replace(/\s*-\s*topic$/i, '').replace(/\s*(vevo|official)$/i, '').split(/\s*[,&]\s*|\s+feat\.?\s+/i)[0].trim();
 async function loadLyrics(m) {
   const key = m.key || m.title;
-  Object.assign(lyrics, { key, lines: [], status: 'loading', source: '' });
+  Object.assign(lyrics, { key, lines: [], status: 'loading', source: '', yaError: '' });
   lastLyricIdx = -2; renderLyrics(0);
   if (!store.settings.lyrics) { lyrics.status = 'off'; return; }
   const qs = (o) => Object.entries(o).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
@@ -239,6 +239,15 @@ async function loadLyrics(m) {
   };
   let data = await get(`https://lrclib.net/api/get?${qs({ artist_name: artist, track_name: title, album_name: m.album, duration: m.duration ? Math.round(m.duration) : '' })}`);
   if (!data?.syncedLyrics) data = pick(await get(`https://lrclib.net/api/search?${qs({ track_name: title, artist_name: artist })}`)) || data;
+  let source = 'LRCLIB';
+  // нет синхронного текста в LRCLIB — спрашиваем Яндекс Музыку (если пользователь вошёл)
+  if (!data?.syncedLyrics && store.settings.yandexToken) {
+    const ya = await island.yandexLyrics({ title, artist, duration: m.duration || 0 });
+    if (lyrics.key !== key) return;
+    if (ya?.error) lyrics.yaError = ya.error;
+    if (ya?.found && ya.format === 'LRC') { data = { syncedLyrics: ya.text }; source = 'Яндекс Музыка'; }
+    else if (ya?.found && !data?.plainLyrics) { data = { plainLyrics: ya.text }; source = 'Яндекс Музыка'; }
+  }
   if (!data?.syncedLyrics && !data?.plainLyrics) data = pick(await get(`https://lrclib.net/api/search?${qs({ q: `${artist} ${title}`.trim() })}`), true);
   if (lyrics.key !== key) return;
   if (data?.syncedLyrics) {
@@ -254,7 +263,7 @@ async function loadLyrics(m) {
     lyrics.lines = rows.map((text, i) => ({ t: (dur * 0.05) + (dur * 0.9 * i) / rows.length, text }));
     lyrics.status = 'plain';
   } else lyrics.status = 'none';
-  lyrics.source = lyrics.status === 'plain' ? 'LRCLIB · без синхронизации' : 'LRCLIB';
+  lyrics.source = lyrics.status === 'plain' ? `${source} · без синхронизации` : source;
   lastLyricIdx = -2; renderLyrics(mediaPos());
   refresh();
 }
@@ -263,7 +272,7 @@ function renderLyrics(pos) {
   const box = $('#mp-lyrics');
   if (!lyrics.lines.length) {
     const msg = { loading: 'Ищу слова…', none: 'Слов для этой песни не нашлось', off: 'Слова выключены в настройках' }[lyrics.status] || '';
-    if (lastLyricIdx !== msg) { box.innerHTML = msg ? `<p class="cur dim-msg">${msg}</p>${lyrics.status === 'none' ? '<p>Их нет в бесплатной базе LRCLIB</p>' : ''}` : ''; lastLyricIdx = msg; }
+    if (lastLyricIdx !== msg) { box.innerHTML = msg ? `<p class="cur dim-msg">${msg}</p>${lyrics.status === 'none' ? `<p>${esc(lyrics.yaError || (store.settings.yandexToken ? 'Нет ни в LRCLIB, ни в Яндекс Музыке' : 'Нет в LRCLIB · войди в Яндекс в настройках, там больше русских песен'))}</p>` : ''}` : ''; lastLyricIdx = msg; }
     return;
   }
   let i = lyrics.lines.findIndex((l) => l.t > pos + 0.25) - 1;
@@ -941,6 +950,8 @@ async function renderSettings() {
     ${sw('autostart', 'Запускать вместе с Windows')}
     ${sw('mascot', 'Котик на острове')}
     ${sw('lyrics', 'Слова песен в мини-плеере')}
+    <div class="field row2"><div><label>Слова из Яндекс Музыки</label><div class="sub">${s.yandexToken ? '✓ Вход выполнен' : 'Русские песни, синхронный текст'}</div></div>
+      <button class="chip ${s.yandexToken ? '' : 'accent'}" data-yandex="${s.yandexToken ? 'logout' : 'login'}">${s.yandexToken ? 'Выйти' : 'Войти'}</button></div>
     ${sw('recAudio', 'Записывать звук системы в видео')}
     <div class="field wide row2"><div><label>Агенты · Claude Code (терминал и Claude Desktop)</label><div class="sub">${ag.installed ? '✓ Подключено — остров покажет, когда агент работает, ждёт ответа и закончил' : 'Остров добавит хуки в ~/.claude/settings.json (копия сохранится рядом)'}</div></div>
       <button class="chip ${ag.installed ? '' : 'accent'}" data-agents="${ag.installed ? 'remove' : 'install'}">${ag.installed ? 'Отключить' : 'Подключить'}</button></div>
@@ -974,6 +985,14 @@ $('#settings').addEventListener('click', async (e) => {
   if (p) {
     const file = await island.pickFile(p.dataset.kind);
     if (file) { saveSetting(p.dataset.pick, file); renderSettings(); }
+  }
+  const y = e.target.closest('[data-yandex]');
+  if (y) {
+    const ok = y.dataset.yandex === 'login' ? await island.yandexLogin() : await island.yandexLogout();
+    store.settings = (await island.getStore()).settings; // токен сохранил главный процесс — берём свежие настройки
+    if (y.dataset.yandex === 'login') showToast({ icon: 'info', title: ok ? 'Яндекс Музыка подключена' : 'Вход не завершён', text: ok ? 'Теперь слова ищутся и там' : 'Окно входа закрыто', force: true });
+    if (media) loadLyrics(media);
+    renderSettings();
   }
   const a = e.target.closest('[data-agents]');
   if (a) {

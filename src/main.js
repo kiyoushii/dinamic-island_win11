@@ -18,7 +18,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 const storeFile = () => path.join(app.getPath('userData'), 'island.json');
 const defaults = {
   settings: {
-    vpnApp: '', vpnConf: '', recAudio: true,
+    vpnApp: '', vpnConf: '', recAudio: true, yandexToken: '',
     city: 'Москва', lat: 55.7558, lon: 37.6173,
     hotkey: 'Alt+Space', mascot: true, dnd: false, autostart: false,
     aiUrl: 'http://localhost:11434/v1', aiKey: '', aiModel: 'llama3.2',
@@ -265,10 +265,36 @@ function buildFileIndex() {
   fileIndexTime = Date.now();
 }
 const iconCache = new Map();
+const expandEnv = (s = '') => s.replace(/%([^%]+)%/g, (m, k) => process.env[k] ?? m);
+// у ярлыков (.lnk/.url) Windows отдаёт общий значок «листок со стрелкой» — берём значок того, на что ярлык указывает
+function iconSource(p) {
+  try {
+    if (IS_WIN && /\.lnk$/i.test(p)) {
+      const l = shell.readShortcutLink(p);
+      const icon = expandEnv(l.icon), target = expandEnv(l.target);
+      if (icon && fs.existsSync(icon)) return icon;
+      if (target && fs.existsSync(target)) return target;
+    }
+    if (/\.url$/i.test(p)) {
+      const m = /^IconFile=(.+)$/im.exec(fs.readFileSync(p, 'utf8'));
+      const icon = m && expandEnv(m[1].trim());
+      if (icon && fs.existsSync(icon)) return icon;
+    }
+  } catch {}
+  return p;
+}
 async function iconFor(p) {
   if (iconCache.has(p)) return iconCache.get(p);
   let url = null;
-  try { url = (await app.getFileIcon(p, { size: 'normal' })).toDataURL(); } catch {}
+  const src = iconSource(p);
+  try {
+    if (/\.ico$/i.test(src)) {
+      const img = nativeImage.createFromPath(src);
+      if (!img.isEmpty()) url = img.resize({ width: 32, height: 32 }).toDataURL();
+    }
+    if (!url) url = (await app.getFileIcon(src, { size: 'large' })).toDataURL();
+  } catch {}
+  if (!url && src !== p) { try { url = (await app.getFileIcon(p, { size: 'large' })).toDataURL(); } catch {} }
   iconCache.set(p, url);
   return url;
 }
@@ -481,6 +507,7 @@ app.whenReady().then(() => {
   applySettings();
   setTimeout(() => { buildAppIndex(); buildFileIndex(); }, 1500);
   require('./features')({ send, toast, store: () => store, saveStore, getWin: () => win, appIndex: () => appIndex });
+  require('./yandex')({ store: () => store, saveStore });
   screen.on('display-metrics-changed', () => {
     if (!alive()) return;
     const { workArea } = screen.getPrimaryDisplay();

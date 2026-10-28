@@ -67,7 +67,7 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
       if (/waiting for your input/i.test(msg) && (!cur || cur.state !== 'working')) return; // просто простаивает
       agents.set(id, { id, name, project, state: 'ask', text: msg, t: Date.now() });
       toast({ icon: 'agent', title: `${name} ждёт ответа`, text: msg, app: project, force: true, sticky: true });
-      if (!getWin()?.isFocused() && Notification.isSupported()) new Notification({ title: `${name} ждёт ответа`, body: msg }).show();
+      if (!(getWin() && !getWin().isDestroyed() && getWin().isFocused()) && Notification.isSupported()) new Notification({ title: `${name} ждёт ответа`, body: msg }).show();
     } else if (event === 'done') {
       const summary = String(d.text || d.last_assistant_message || lastAssistant(d.transcript_path) || 'Задача выполнена').slice(0, 200);
       agents.delete(id);
@@ -191,14 +191,14 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `Запись ${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.${ext === 'mp4' ? 'mp4' : 'webm'}`);
     rec = { file, stream: fs.createWriteStream(file), t: Date.now() };
-    getWin()?.setContentProtection(true); // сам остров в запись не попадает
+    { const w = getWin(); if (w && !w.isDestroyed()) w.setContentProtection(true); } // сам остров в запись не попадает
     return file;
   });
   ipcMain.on('rec:chunk', (_e, buf) => { if (rec) rec.stream.write(Buffer.from(buf)); });
   ipcMain.on('rec:stop', () => {
     if (!rec) return;
     const r = rec; rec = null;
-    getWin()?.setContentProtection(false);
+    { const w = getWin(); if (w && !w.isDestroyed()) w.setContentProtection(false); }
     r.stream.end(() => {
       const sec = Math.round((Date.now() - r.t) / 1000);
       const mb = (fs.statSync(r.file).size / 1048576).toFixed(1).replace('.', ',');

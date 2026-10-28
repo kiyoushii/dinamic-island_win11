@@ -37,12 +37,6 @@ kbd { font-size: 11px; font-family: inherit; color: var(--dim); background: var(
   box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
 }
 #island.wavy { border-radius: 0 0 6px 6px; }
-#island::before, #island::after { /* «ушки», чтобы остров плавно вырастал из края экрана */
-  content: ""; position: absolute; top: 0; width: 14px; height: 14px; pointer-events: none;
-  background: radial-gradient(circle at 0 100%, transparent 13.5px, var(--bg) 14px);
-}
-#island::before { left: -14px; transform: scaleX(-1); }
-#island::after { right: -14px; }
 #island.s-hidden { width: 140px; height: 6px; opacity: .0; }
 .view {
   position: absolute; inset: 0; opacity: 0; pointer-events: none;

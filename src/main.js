@@ -59,8 +59,13 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => win.showInactive());
   win.on('blur', () => send('blur'));
+  // Alt+F4 не должен убивать остров — закрываем окно только при выходе из программы
+  win.on('close', (e) => { if (!quitting) e.preventDefault(); });
 }
-const send = (ch, data) => { if (win && !win.isDestroyed()) win.webContents.send(ch, data); };
+let quitting = false;
+app.on('before-quit', () => { quitting = true; clearInterval(cursorTimer); });
+const alive = () => win && !win.isDestroyed();
+const send = (ch, data) => { if (alive()) win.webContents.send(ch, data); };
 
 function toast(n) {
   // n: {icon, title, text}
@@ -69,11 +74,11 @@ function toast(n) {
 }
 
 ipcMain.on('mouse', (_e, over) => {
-  if (!win) return;
+  if (!alive()) return;
   win.setIgnoreMouseEvents(!over, { forward: true });
 });
-ipcMain.on('focus', () => { win.focus(); });
-ipcMain.on('blur', () => { win.blur(); });
+ipcMain.on('focus', () => { if (alive()) win.focus(); });
+ipcMain.on('blur', () => { if (alive()) win.blur(); });
 
 ipcMain.handle('store:get', () => store);
 ipcMain.handle('store:set', (_e, key, value) => {
@@ -171,8 +176,8 @@ ipcMain.on('paste', (_e, text) => {
 // ---------- загрузки ----------
 function downloadsLoop() {
   const dir = app.getPath('downloads');
-  const partial = /\.(crdownload|part|partial|download|opdownload|tmp)$/i;
-  const track = new Map(); // name -> {size, t}
+  const partial = /\.(crdownload|part|partial|opdownload)$/i;
+  const track = new Map(); // имя -> { size, t, changedAt, active }
   setInterval(() => {
     let files;
     try { files = fs.readdirSync(dir); } catch { return; }
@@ -181,19 +186,27 @@ function downloadsLoop() {
     for (const f of files) {
       if (!partial.test(f)) continue;
       let st; try { st = fs.statSync(path.join(dir, f)); } catch { continue; }
+      if (!st.isFile()) continue;
       seen.add(f);
       const prev = track.get(f);
-      const speed = prev ? (st.size - prev.size) / ((now - prev.t) / 1000) : 0;
-      track.set(f, { size: st.size, t: now, speed });
+      if (!prev) { track.set(f, { size: st.size, t: now, changedAt: 0, speed: 0, active: false }); continue; }
+      const grew = st.size !== prev.size;
+      const speed = grew ? (st.size - prev.size) / ((now - prev.t) / 1000) : 0;
+      track.set(f, { size: st.size, t: now, speed, changedAt: grew ? now : prev.changedAt, active: prev.active || grew });
     }
-    for (const [f] of track) {
-      if (!seen.has(f)) {
-        track.delete(f);
-        const name = f.replace(partial, '').replace(/^Unconfirmed \d+$/, 'Файл');
+    for (const [f, v] of track) {
+      if (seen.has(f)) continue;
+      track.delete(f);
+      // файл пропал: если он рос и рядом появился готовый — значит загрузка завершилась
+      const name = f.replace(partial, '');
+      if (v.active && fs.existsSync(path.join(dir, name))) {
         toast({ icon: 'download', title: 'Загружено', text: name, file: path.join(dir, name) });
       }
     }
-    const list = [...track].map(([f, v]) => ({ name: f.replace(partial, ''), size: v.size, speed: v.speed }));
+    // показываем только то, что действительно качается (размер менялся за последние 15 с);
+    // брошенные недокачанные файлы и чужие временные файлы не трогаем
+    const list = [...track].filter(([, v]) => v.active && now - v.changedAt < 15000)
+      .map(([f, v]) => ({ name: f.replace(partial, ''), size: v.size, speed: v.speed }));
     send('downloads', list);
   }, 1000);
 }
@@ -206,6 +219,7 @@ function registerHotkey() {
   let ok = false;
   try {
     ok = globalShortcut.register(currentHotkey, () => {
+      if (!alive()) return;
       win.setIgnoreMouseEvents(false);
       win.focus();
       send('launcher');
@@ -433,7 +447,7 @@ function cursorLoop() {
   clearInterval(cursorTimer);
   if (!store.settings.mascot) return;
   cursorTimer = setInterval(() => {
-    if (!win) return;
+    if (!alive()) return;
     const p = screen.getCursorScreenPoint();
     const b = win.getBounds();
     send('cursor', { x: p.x - b.x, y: p.y - b.y });
@@ -448,7 +462,7 @@ function createTray() {
   tray.setToolTip('Island');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Открыть остров', click: () => send('expand') },
-    { label: 'Поиск (' + (store.settings.hotkey || 'Alt+Space') + ')', click: () => { win.setIgnoreMouseEvents(false); win.focus(); send('launcher'); } },
+    { label: 'Поиск (' + (store.settings.hotkey || 'Alt+Space') + ')', click: () => { if (!alive()) return; win.setIgnoreMouseEvents(false); win.focus(); send('launcher'); } },
     { label: 'Не беспокоить', type: 'checkbox', checked: store.settings.dnd, click: (m) => { store.settings.dnd = m.checked; saveStore(); send('store', store); } },
     { type: 'separator' },
     { label: 'Перезапустить', click: () => { app.relaunch(); app.exit(0); } },
@@ -468,6 +482,7 @@ app.whenReady().then(() => {
   setTimeout(() => { buildAppIndex(); buildFileIndex(); }, 1500);
   require('./features')({ send, toast, store: () => store, saveStore, getWin: () => win, appIndex: () => appIndex });
   screen.on('display-metrics-changed', () => {
+    if (!alive()) return;
     const { workArea } = screen.getPrimaryDisplay();
     win.setBounds({ x: Math.round(workArea.x + (workArea.width - WIN_W) / 2), y: workArea.y, width: WIN_W, height: WIN_H });
   });

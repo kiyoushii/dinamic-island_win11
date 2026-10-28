@@ -916,7 +916,7 @@ async function renderSettings() {
     ${sw('mascot', 'Котик на острове')}
     ${sw('lyrics', 'Слова песен в мини-плеере')}
     ${sw('recAudio', 'Записывать звук системы в видео')}
-    <div class="field wide row2"><div><label>Агенты в терминале · Claude Code</label><div class="sub">${ag.installed ? '✓ Подключено — остров покажет, когда агент работает, ждёт ответа и закончил' : 'Остров добавит хуки в ~/.claude/settings.json (копия сохранится рядом)'}</div></div>
+    <div class="field wide row2"><div><label>Агенты · Claude Code (терминал и Claude Desktop)</label><div class="sub">${ag.installed ? '✓ Подключено — остров покажет, когда агент работает, ждёт ответа и закончил' : 'Остров добавит хуки в ~/.claude/settings.json (копия сохранится рядом)'}</div></div>
       <button class="chip ${ag.installed ? '' : 'accent'}" data-agents="${ag.installed ? 'remove' : 'install'}">${ag.installed ? 'Отключить' : 'Подключить'}</button></div>
     ${pick('vpnApp', 'VPN: программа (Happ / AmneziaVPN)', 'найдётся сама', 'app')}
     ${pick('vpnConf', 'VPN: конфиг AmneziaWG (необязательно)', 'файл .conf', 'conf')}
@@ -953,7 +953,7 @@ $('#settings').addEventListener('click', async (e) => {
   if (a) {
     const r = await island.agentsInstall(a.dataset.agents === 'remove');
     if (!r.ok) showToast({ icon: 'agent', title: 'Не получилось', text: r.error, force: true });
-    else showToast({ icon: 'agent', title: a.dataset.agents === 'remove' ? 'Агенты отключены' : 'Claude Code подключён', text: a.dataset.agents === 'remove' ? 'Хуки убраны из настроек' : 'Перезапусти Claude Code — дальше остров всё покажет', force: true });
+    else showToast({ icon: 'agent', title: a.dataset.agents === 'remove' ? 'Агенты отключены' : 'Claude Code подключён', text: a.dataset.agents === 'remove' ? 'Хуки убраны из настроек' : 'Начни новый чат в Claude Code или Claude Desktop — дальше остров всё покажет', force: true });
     renderSettings();
   }
 });

@@ -9,7 +9,8 @@ const { spawn, exec, execFile } = require('child_process');
 const IS_WIN = process.platform === 'win32';
 const AGENT_PORT = 47821;
 const HOOK_URL = `http://127.0.0.1:${AGENT_PORT}/agent/claude`;
-const HOOK_CMD = `curl -s -m 2 -X POST -H "Content-Type: application/json" --data-binary @- ${HOOK_URL} || exit 0`;
+// http-хук: Claude Code сам шлёт POST с JSON события — без оболочки, одинаково в терминале и в Claude Desktop
+const HOOK = { type: 'http', url: HOOK_URL, timeout: 3 };
 
 function ps(script, args = [], timeoutMs = 30000) {
   return new Promise((resolve) => {
@@ -85,7 +86,7 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
     let body = '';
     req.on('data', (c) => { body += c; if (body.length > 1e6) req.destroy(); });
     req.on('end', () => {
-      res.writeHead(200); res.end('ok');
+      res.writeHead(204); res.end(); // пустой 2xx — для Claude Code это «успех без вывода»
       try { handleAgent(req.url.split('/')[2] || 'agent', body ? JSON.parse(body) : {}); } catch {}
     });
   });
@@ -101,10 +102,12 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
   ipcMain.handle('agents:status', () => {
     try {
       const s = JSON.parse(fs.readFileSync(claudeSettings, 'utf8'));
-      return { installed: HOOK_EVENTS.every((e) => JSON.stringify(s.hooks?.[e] || []).includes(HOOK_URL)), port: AGENT_PORT };
+      return { installed: HOOK_EVENTS.every((e) => (s.hooks?.[e] || []).some(isCurrent)), port: AGENT_PORT };
     } catch { return { installed: false, port: AGENT_PORT }; }
   });
-  ipcMain.handle('agents:install', (_e, remove = false) => {
+  const isOurs = (h) => JSON.stringify(h).includes(HOOK_URL);
+  const isCurrent = (g) => (g.hooks || []).some((h) => h.type === 'http' && h.url === HOOK_URL);
+  function writeHooks(remove) {
     let s = {};
     if (fs.existsSync(claudeSettings)) {
       const raw = fs.readFileSync(claudeSettings, 'utf8');
@@ -113,14 +116,21 @@ module.exports = function setup({ send, toast, store, saveStore, getWin, appInde
     } else fs.mkdirSync(path.dirname(claudeSettings), { recursive: true });
     s.hooks ||= {};
     for (const e of HOOK_EVENTS) {
-      const list = (s.hooks[e] || []).filter((g) => !JSON.stringify(g).includes(HOOK_URL));
-      if (!remove) list.push({ hooks: [{ type: 'command', command: HOOK_CMD }] });
+      const list = (s.hooks[e] || []).filter((g) => !isOurs(g)); // убираем и старые curl-хуки, и прежние http
+      if (!remove) list.push({ hooks: [{ ...HOOK }] });
       if (list.length) s.hooks[e] = list; else delete s.hooks[e];
     }
     if (!Object.keys(s.hooks).length) delete s.hooks;
     fs.writeFileSync(claudeSettings, JSON.stringify(s, null, 2));
     return { ok: true };
-  });
+  }
+  ipcMain.handle('agents:install', (_e, remove = false) => writeHooks(remove));
+  // кто уже подключал старые curl-хуки (не работали в PowerShell) — тихо переводим на http
+  try {
+    const s = JSON.parse(fs.readFileSync(claudeSettings, 'utf8'));
+    const groups = HOOK_EVENTS.flatMap((e) => s.hooks?.[e] || []).filter(isOurs);
+    if (groups.length && !groups.every(isCurrent)) writeHooks(false);
+  } catch {}
 
   // ================= VPN =================
   let vpnState = { on: false, via: '' };

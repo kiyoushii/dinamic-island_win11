@@ -28,9 +28,9 @@ jobs:
           }
           $sw = [Diagnostics.Stopwatch]::StartNew()
           $out = powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File src/win/bt.ps1
-          Write-Host "bt.ps1 за $($sw.Elapsed.TotalSeconds) с:"
+          Write-Host "bt.ps1 took $($sw.Elapsed.TotalSeconds) s:"
           $out | ForEach-Object { Write-Host $_ }
-          if (-not ($out | Select-String '^ISLAND_JSON \{')) { throw 'bt.ps1 не напечатал ISLAND_JSON' }
+          if (-not ($out | Select-String '^ISLAND_JSON \{')) { throw 'bt.ps1 did not print ISLAND_JSON' }
       - run: npx electron-builder --win nsis portable --publish never
       - uses: actions/upload-artifact@v4
         with:
